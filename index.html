@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a8754" />
+  <meta name="description" content="Finanzas Héctor & Sonia — control de ingresos, egresos y efectivo en tiempo real." />
+  <title>Finanzas H&S</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/img/icon-192.png" />
+  <link rel="apple-touch-icon" href="assets/img/icon-192.png" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body>
+
+<!-- ========== Login ========== -->
+<section id="view-login" class="view view-login active">
+  <div class="login-card">
+    <div class="login-logo">
+      <img src="assets/img/logo.svg" alt="H&S" />
+    </div>
+    <h1>Finanzas H&amp;S</h1>
+    <p class="muted">Ingresa la contraseña para continuar</p>
+    <form id="form-login" autocomplete="off">
+      <div class="input-group">
+        <input type="password" id="login-password" placeholder="Contraseña" required autocomplete="current-password" />
+        <button type="button" class="btn-icon" id="toggle-pw" aria-label="Mostrar contraseña">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
+      <label class="checkbox">
+        <input type="checkbox" id="remember-device" /> Recordar en este dispositivo
+      </label>
+      <button type="submit" class="btn btn-primary btn-block">Entrar</button>
+      <p id="login-error" class="error hidden">Contraseña incorrecta</p>
+    </form>
+    <p class="footer-text">Solo Héctor y Sonia. Datos cifrados en Firebase.</p>
+  </div>
+</section>
+
+<!-- ========== App ========== -->
+<div id="app" class="app hidden">
+  <header class="app-header">
+    <div class="brand">
+      <img src="assets/img/logo.svg" alt="" class="brand-logo" />
+      <span class="brand-text">Finanzas H&amp;S</span>
+    </div>
+    <div class="header-actions">
+      <span id="connection-status" class="conn-dot" title="Estado de conexión"></span>
+      <button class="btn-icon" id="btn-theme" aria-label="Cambiar tema">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="app-main">
+
+    <!-- Dashboard -->
+    <section id="view-dashboard" class="view-content active">
+      <div class="page-title">
+        <h2>Resumen</h2>
+        <select id="filter-period" class="select-sm">
+          <option value="month">Mes actual</option>
+          <option value="prev">Mes anterior</option>
+          <option value="year">Año</option>
+          <option value="all">Todo</option>
+        </select>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-card kpi-primary">
+          <div class="kpi-label">Efectivo disponible</div>
+          <div class="kpi-value" id="kpi-cash">L. 0.00</div>
+          <div class="kpi-sub" id="kpi-cash-sub">Total caja + bancos</div>
+        </div>
+        <div class="kpi-card kpi-income">
+          <div class="kpi-label">Ingresos</div>
+          <div class="kpi-value" id="kpi-income">L. 0.00</div>
+          <div class="kpi-sub" id="kpi-income-sub">del período</div>
+        </div>
+        <div class="kpi-card kpi-expense">
+          <div class="kpi-label">Egresos</div>
+          <div class="kpi-value" id="kpi-expense">L. 0.00</div>
+          <div class="kpi-sub" id="kpi-expense-sub">del período</div>
+        </div>
+        <div class="kpi-card kpi-profit">
+          <div class="kpi-label">Beneficio / Pérdida</div>
+          <div class="kpi-value" id="kpi-profit">0%</div>
+          <div class="kpi-sub" id="kpi-profit-sub">vs ingresos</div>
+        </div>
+      </div>
+
+      <div class="chart-grid">
+        <div class="chart-card">
+          <h3>Ingresos vs Egresos</h3>
+          <canvas id="chart-trend"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Egresos por categoría</h3>
+          <canvas id="chart-categories"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Por persona</h3>
+          <canvas id="chart-person"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Por cuenta</h3>
+          <canvas id="chart-accounts"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Ingresos -->
+    <section id="view-ingresos" class="view-content">
+      <div class="page-title">
+        <h2>Ingresos</h2>
+        <button class="btn btn-primary btn-sm" data-open-modal="modal-tx" data-tipo="ingreso">+ Nuevo ingreso</button>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" data-person-filter="all">General</button>
+        <button class="tab" data-person-filter="hector">Héctor</button>
+        <button class="tab" data-person-filter="sonia">Sonia</button>
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-item">
+          <span class="muted">Total mostrado</span>
+          <strong id="ingresos-total">L. 0.00</strong>
+        </div>
+      </div>
+
+      <ul class="tx-list" id="list-ingresos">
+        <li class="empty">Aún no hay ingresos registrados.</li>
+      </ul>
+    </section>
+
+    <!-- Egresos -->
+    <section id="view-egresos" class="view-content">
+      <div class="page-title">
+        <h2>Egresos</h2>
+        <button class="btn btn-primary btn-sm" data-open-modal="modal-tx" data-tipo="egreso">+ Nuevo egreso</button>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" data-person-filter-eg="all">General</button>
+        <button class="tab" data-person-filter-eg="hector">Héctor</button>
+        <button class="tab" data-person-filter-eg="sonia">Sonia</button>
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-item">
+          <span class="muted">Total mostrado</span>
+          <strong id="egresos-total">L. 0.00</strong>
+        </div>
+      </div>
+
+      <ul class="tx-list" id="list-egresos">
+        <li class="empty">Aún no hay egresos registrados.</li>
+      </ul>
+    </section>
+
+    <!-- Balance -->
+    <section id="view-balance" class="view-content">
+      <div class="page-title"><h2>Balance general</h2></div>
+
+      <div class="kpi-card kpi-primary balance-total-card">
+        <div class="kpi-label">Total de activos</div>
+        <div class="kpi-value" id="balance-total">L. 0.00</div>
+      </div>
+
+      <div class="balance-section">
+        <h3>Héctor Castro</h3>
+        <div class="muted">Total: <strong id="balance-total-hector">L. 0.00</strong></div>
+        <ul class="account-list" id="cuentas-hector"></ul>
+      </div>
+
+      <div class="balance-section">
+        <h3>Sonia Chinchilla</h3>
+        <div class="muted">Total: <strong id="balance-total-sonia">L. 0.00</strong></div>
+        <ul class="account-list" id="cuentas-sonia"></ul>
+      </div>
+
+      <button class="btn btn-outline btn-block" id="btn-add-account">+ Agregar cuenta</button>
+    </section>
+
+    <!-- Configuración -->
+    <section id="view-config" class="view-content">
+      <div class="page-title"><h2>Configuración</h2></div>
+
+      <div class="card">
+        <h3>Tasa de cambio USD → HNL</h3>
+        <p class="muted">
+          Fuente: <span id="tasa-fuente">—</span> ·
+          Actualizada: <span id="tasa-fecha">—</span>
+        </p>
+        <div class="tasa-row">
+          <input type="number" step="0.0001" id="tasa-input" placeholder="0.00" />
+          <button class="btn btn-outline btn-sm" id="btn-tasa-api">Desde API</button>
+          <button class="btn btn-primary btn-sm" id="btn-tasa-save">Guardar</button>
+        </div>
+        <p class="muted small">Si el BCH publicó una tasa distinta, edítala manualmente.</p>
+      </div>
+
+      <div class="card">
+        <h3>Respaldo</h3>
+        <p class="muted">Los datos viven en Firebase. Aquí puedes guardar una copia local.</p>
+        <div class="row-buttons">
+          <button class="btn btn-outline btn-sm" id="btn-export">Exportar JSON</button>
+          <label class="btn btn-outline btn-sm">
+            Importar JSON
+            <input type="file" id="file-import" accept="application/json" hidden />
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Sesión</h3>
+        <button class="btn btn-danger btn-sm" id="btn-logout">Cerrar sesión</button>
+      </div>
+
+      <div class="card">
+        <h3>Acerca de</h3>
+        <p class="muted small">Finanzas H&amp;S · PWA · v1.0</p>
+        <p class="muted small">Inspirada en el Excel original de Héctor &amp; Sonia.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Bottom nav -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-view="dashboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg>
+      <span>Inicio</span>
+    </button>
+    <button class="nav-btn" data-view="ingresos">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+      <span>Ingresos</span>
+    </button>
+    <button class="nav-btn" data-view="egresos">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></svg>
+      <span>Egresos</span>
+    </button>
+    <button class="nav-btn" data-view="balance">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
+      <span>Balance</span>
+    </button>
+    <button class="nav-btn" data-view="config">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span>Más</span>
+    </button>
+  </nav>
+</div>
+
+<!-- ========== Modal: Nueva transacción ========== -->
+<div id="modal-tx" class="modal hidden">
+  <div class="modal-backdrop" data-close-modal></div>
+  <div class="modal-content">
+    <header class="modal-header">
+      <h3 id="modal-tx-title">Nuevo registro</h3>
+      <button class="btn-icon" data-close-modal aria-label="Cerrar">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <form id="form-tx" class="modal-body">
+      <input type="hidden" id="tx-id" />
+      <input type="hidden" id="tx-tipo" />
+
+      <label>Persona
+        <div class="segmented">
+          <input type="radio" name="persona" id="p-hector" value="hector" checked />
+          <label for="p-hector">Héctor</label>
+          <input type="radio" name="persona" id="p-sonia" value="sonia" />
+          <label for="p-sonia">Sonia</label>
+        </div>
+      </label>
+
+      <label id="lbl-tipo-ingreso" class="hidden">Tipo de ingreso
+        <select id="tx-tipo-ingreso">
+          <option value="salario">Salario</option>
+          <option value="otros">Otros</option>
+        </select>
+      </label>
+
+      <label id="lbl-categoria" class="hidden">Categoría
+        <select id="tx-categoria">
+          <option value="">Selecciona...</option>
+        </select>
+      </label>
+
+      <label id="lbl-categoria-nueva" class="hidden">Nueva categoría
+        <input type="text" id="tx-categoria-nueva" placeholder="Escribe el nombre" />
+      </label>
+
+      <div class="grid-2">
+        <label>Monto
+          <input type="number" step="0.01" min="0" id="tx-monto" required placeholder="0.00" />
+        </label>
+        <label>Moneda
+          <select id="tx-moneda">
+            <option value="HNL">L. (HNL)</option>
+            <option value="USD">$ (USD)</option>
+          </select>
+        </label>
+      </div>
+
+      <p id="tx-conversion" class="muted small hidden"></p>
+
+      <label>Descripción
+        <input type="text" id="tx-descripcion" placeholder="Opcional / detalle" />
+      </label>
+
+      <label>Método de pago
+        <select id="tx-metodo">
+          <option value="transferencia">Transferencia</option>
+          <option value="tarjeta_credito">Tarjeta de crédito</option>
+          <option value="efectivo">Efectivo</option>
+        </select>
+      </label>
+
+      <label>Cuenta
+        <select id="tx-cuenta" required></select>
+      </label>
+
+      <label>Fecha
+        <input type="date" id="tx-fecha" required />
+      </label>
+
+      <div class="row-buttons">
+        <button type="button" class="btn btn-outline" data-close-modal>Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ========== Modal: Cuenta ========== -->
+<div id="modal-cuenta" class="modal hidden">
+  <div class="modal-backdrop" data-close-modal></div>
+  <div class="modal-content">
+    <header class="modal-header">
+      <h3 id="modal-cuenta-title">Cuenta</h3>
+      <button class="btn-icon" data-close-modal aria-label="Cerrar">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <form id="form-cuenta" class="modal-body">
+      <input type="hidden" id="cuenta-id" />
+
+      <label>Propietario
+        <select id="cuenta-propietario" required>
+          <option value="hector">Héctor</option>
+          <option value="sonia">Sonia</option>
+        </select>
+      </label>
+
+      <label>Nombre
+        <input type="text" id="cuenta-nombre" required placeholder="Ej. BAC" />
+      </label>
+
+      <label>Saldo inicial (L.)
+        <input type="number" step="0.01" id="cuenta-saldo" required placeholder="0.00" />
+      </label>
+
+      <p class="muted small" id="cuenta-hint">El saldo se ajustará automáticamente con ingresos y egresos.</p>
+
+      <div class="row-buttons">
+        <button type="button" class="btn btn-danger" id="btn-cuenta-delete" hidden>Eliminar</button>
+        <button type="button" class="btn btn-outline" data-close-modal>Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ========== Modal: Confirmación ========== -->
+<div id="modal-confirm" class="modal hidden">
+  <div class="modal-backdrop" data-close-modal></div>
+  <div class="modal-content modal-sm">
+    <header class="modal-header">
+      <h3 id="confirm-title">¿Estás seguro?</h3>
+    </header>
+    <div class="modal-body">
+      <p id="confirm-msg"></p>
+      <div class="row-buttons">
+        <button type="button" class="btn btn-outline" data-close-modal>Cancelar</button>
+        <button type="button" class="btn btn-danger" id="confirm-ok">Confirmar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast hidden"></div>
+
+<!-- Firebase + Chart.js -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<!-- App scripts -->
+<script src="assets/js/firebase.js"></script>
+<script src="assets/js/exchange.js"></script>
+<script src="assets/js/store.js"></script>
+<script src="assets/js/charts.js"></script>
+<script src="assets/js/ui.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>

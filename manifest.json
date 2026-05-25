@@ -1,0 +1,27 @@
+{
+  "name": "Finanzas H&S",
+  "short_name": "Finanzas H&S",
+  "description": "Control de ingresos, egresos y efectivo de Héctor & Sonia",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f8f7",
+  "theme_color": "#0a8754",
+  "lang": "es-HN",
+  "categories": ["finance", "productivity"],
+  "icons": [
+    {
+      "src": "assets/img/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/img/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
