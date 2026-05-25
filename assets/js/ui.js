@@ -112,9 +112,12 @@ function initTheme() {
   }
 }
 
-window.UI = {
+// Adjuntamos métodos al MISMO objeto UI y lo exponemos como window.UI
+// para evitar problemas de scope entre <script> clásicos.
+Object.assign(UI, {
   toast, openModal, closeModal, closeAllModals, confirmModal,
   showView, fmtL, fmtDate, fmtShortDate, filterByPeriod,
-  toggleTheme, initTheme,
-  state: UI
-};
+  toggleTheme, initTheme
+});
+UI.state = UI;        // backward compat para UI.state.filters
+window.UI = UI;

@@ -4,7 +4,7 @@
    sólo cacheamos los recursos estáticos.
    ============================================================= */
 
-const CACHE_VERSION = "finanzas-hs-v1";
+const CACHE_VERSION = "finanzas-hs-v2";
 const CORE_ASSETS = [
   "./",
   "./index.html",

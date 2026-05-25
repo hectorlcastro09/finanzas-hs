@@ -243,8 +243,9 @@ async function importData(data) {
   await batch.commit();
 }
 
-window.Store = {
-  ...Store,
+// Adjuntamos métodos al MISMO objeto Store y lo exponemos como window.Store
+// para evitar problemas de scope (const Store es lexical entre scripts).
+Object.assign(Store, {
   subscribe,
   startListeners,
   stopListeners,
@@ -257,12 +258,6 @@ window.Store = {
   addTransaccion,
   deleteTransaccion,
   exportData,
-  importData,
-  get data() {
-    return {
-      transacciones: Store.transacciones,
-      cuentas: Store.cuentas,
-      categorias: Store.categorias
-    };
-  }
-};
+  importData
+});
+window.Store = Store;
