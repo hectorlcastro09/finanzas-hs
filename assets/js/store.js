@@ -109,7 +109,9 @@ async function addCategoria(nombre, grupo = "Otros") {
 }
 
 // ---- Cuentas ----
-async function addCuenta({ propietario, nombre, saldoInicial = 0 }) {
+// Las cuentas nuevas son del matrimonio ("hs"); el campo propietario
+// se conserva solo por compatibilidad con las cuentas antiguas.
+async function addCuenta({ propietario = "hs", nombre, saldoInicial = 0 }) {
   const docRef = await hogarRef().collection("cuentas").add({
     propietario,
     nombre,
@@ -205,6 +207,8 @@ async function deleteTransaccion(id) {
 }
 
 // ---- Export / Import ----
+// Nota: las fotos de fondo (colección "fondos") NO se incluyen en el
+// respaldo — son imágenes grandes y se administran desde Ajustes.
 async function exportData() {
   return {
     exportedAt: new Date().toISOString(),

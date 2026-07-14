@@ -1,34 +1,57 @@
 /* =============================================================
-   app.js — Bootstrap principal y wiring
+   app.js — Bootstrap principal y wiring (v2)
+   - Boot con onAuthStateChanged (la sesión restaura sin red)
+   - Captura rápida unificada (persona: "hs")
+   - Chip de balance mes/año siempre visible
+   - Dictado por voz (Web Speech API, es-HN)
    ============================================================= */
 
 (function () {
 
   const TIPO_INGRESO = "ingreso";
   const TIPO_EGRESO = "egreso";
+  const LS_CUENTA = "hs_last_cuenta";
+  const LS_METODO = "hs_last_metodo";
+  const LS_CAT_EGRESO = "hs_last_cat_egreso";
+  const LS_CAT_INGRESO = "hs_last_cat_ingreso";
 
   let unsubscribe = null;
+  let authBooted = false;
+  const quick = { tipo: TIPO_EGRESO, cat: null, otra: false };
 
   // ============ Boot ============
-  document.addEventListener("DOMContentLoaded", async () => {
+  document.addEventListener("DOMContentLoaded", () => {
     UI.initTheme();
+    syncThemeMeta();
+    initThemeControls();
     registerServiceWorker();
     bindStaticUI();
+    initVoice();
 
     updateConnectionStatus();
     window.addEventListener("online", updateConnectionStatus);
     window.addEventListener("offline", updateConnectionStatus);
 
-    // Si hay sesión guardada en este dispositivo, intentar entrar
-    const remembered = localStorage.getItem("hs_authenticated") === "1";
-    if (remembered) {
-      try {
-        await window.FBase.signInShared("HS880907");
-        await onAuthed();
-      } catch (err) {
-        console.warn("Auto-login falló:", err);
+    // limpieza de flags de la v1 (ya no se usan)
+    localStorage.removeItem("hs_authenticated");
+    sessionStorage.removeItem("hs_authenticated");
+
+    // Puerta de entrada: Firebase restaura la sesión guardada (offline OK)
+    window.FBase.onAuthChange(async (user) => {
+      document.getElementById("splash").classList.add("hidden");
+      if (user) {
+        document.getElementById("view-login").classList.remove("active");
+        if (!authBooted) {
+          authBooted = true;
+          await onAuthed();
+        }
+      } else {
+        authBooted = false;
+        teardown();
+        document.getElementById("app").classList.add("hidden");
+        document.getElementById("view-login").classList.add("active");
       }
-    }
+    });
   });
 
   // ============ Login ============
@@ -38,19 +61,12 @@
     const remember = document.getElementById("remember-device").checked;
     const errEl = document.getElementById("login-error");
     errEl.classList.add("hidden");
-
     try {
-      await window.FBase.signInShared(pw);
-      if (remember) localStorage.setItem("hs_authenticated", "1");
-      else sessionStorage.setItem("hs_authenticated", "1");
-      await onAuthed();
+      await window.FBase.signInShared(pw, remember);
+      document.getElementById("login-password").value = "";
+      // onAuthChange se encarga del resto
     } catch (err) {
-      console.error(err);
-      if (err.message === "PASSWORD_INCORRECTO") {
-        errEl.textContent = "Contraseña incorrecta";
-      } else {
-        errEl.textContent = "Error: " + (err.message || "no se pudo iniciar sesión");
-      }
+      errEl.textContent = err.message || "No se pudo iniciar sesión";
       errEl.classList.remove("hidden");
     }
   });
@@ -62,32 +78,58 @@
 
   // ============ Tras autenticarse ============
   async function onAuthed() {
-    document.getElementById("view-login").classList.remove("active");
     document.getElementById("app").classList.remove("hidden");
-
-    await window.Exchange.init();
-    await window.Store.bootstrapIfEmpty();
+    try {
+      await window.Exchange.init();
+      await window.Store.bootstrapIfEmpty();
+    } catch (e) {
+      console.warn("init:", e);
+    }
     window.Store.startListeners();
-
     unsubscribe = window.Store.subscribe(renderAll);
     renderAll();
-    renderTasaConfig();
-    UI.showView("dashboard");
+    UI.showView("inicio");
+    // las fotos de fondo cargan después del primer render (no bloquean nada)
+    setTimeout(() => window.Fondos.start(), 400);
+  }
+
+  function teardown() {
+    window.Store.stopListeners();
+    window.Fondos.stop();
+    if (unsubscribe) { unsubscribe(); unsubscribe = null; }
   }
 
   // ============ Render principal ============
   function renderAll() {
-    populateCuentasSelect();
-    populateCategoriasSelect();
-    renderDashboard();
-    renderIngresos();
-    renderEgresos();
-    renderBalance();
+    renderChip();
+    renderResumen();
+    renderMovimientos();
+    renderCuentasAjustes();
     renderTasaConfig();
   }
 
-  // ============ Dashboard ============
-  function renderDashboard() {
+  // ============ Chip de balance (mes + año) ============
+  function renderChip() {
+    const now = new Date();
+    let mes = 0, anio = 0;
+    window.Store.transacciones.forEach(t => {
+      const f = t.fecha?.toDate?.() || new Date(t.fecha);
+      if (f.getFullYear() !== now.getFullYear()) return;
+      const delta = (t.tipo === TIPO_INGRESO ? 1 : -1) * Number(t.monto);
+      anio += delta;
+      if (f.getMonth() === now.getMonth()) mes += delta;
+    });
+    const mesEl = document.getElementById("chip-mes");
+    const anioEl = document.getElementById("chip-anio");
+    const mesLbl = now.toLocaleDateString("es-HN", { month: "short" }).replace(".", "");
+    mesEl.textContent = `${mesLbl} ${UI.fmtSigned(mes)}`;
+    mesEl.classList.toggle("pos", mes >= 0);
+    mesEl.classList.toggle("neg", mes < 0);
+    anioEl.textContent = `${now.getFullYear()} ${UI.fmtSigned(anio)}`;
+  }
+
+  // ============ Resumen ============
+  function renderResumen() {
     const period = UI.state.filters.period;
     const filtered = UI.filterByPeriod(window.Store.transacciones, period);
     const ingresos = filtered.filter(t => t.tipo === TIPO_INGRESO).reduce((a, t) => a + Number(t.monto), 0);
@@ -102,98 +144,85 @@
     const profitEl = document.getElementById("kpi-profit");
     profitEl.textContent = (profit >= 0 ? "+" : "") + profit.toFixed(1) + "%";
     profitEl.style.color = profit >= 0 ? "var(--color-income)" : "var(--color-expense)";
-
     document.getElementById("kpi-profit-sub").textContent =
       profit >= 0 ? "beneficio del período" : "pérdida del período";
 
-    // Charts
     window.Charts.renderAll(filtered, window.Store.transacciones, window.Store.cuentas);
   }
 
   document.getElementById("filter-period").addEventListener("change", (e) => {
     UI.state.filters.period = e.target.value;
-    renderDashboard();
+    renderResumen();
   });
 
-  // ============ Ingresos ============
-  function renderIngresos() {
-    const list = document.getElementById("list-ingresos");
-    const filter = UI.state.filters.personIngresos;
-    let items = window.Store.transacciones.filter(t => t.tipo === TIPO_INGRESO);
-    if (filter !== "all") items = items.filter(t => t.persona === filter);
-    renderTxList(list, items, "ingreso");
+  // ============ Movimientos (lista unificada) ============
+  function renderMovimientos() {
+    const list = document.getElementById("list-movimientos");
+    const filter = UI.state.filters.tx;
+    let items = window.Store.transacciones;
+    if (filter !== "all") items = items.filter(t => t.tipo === filter);
 
-    const total = items.reduce((a, t) => a + Number(t.monto), 0);
-    document.getElementById("ingresos-total").textContent = UI.fmtL(total);
-  }
-
-  document.querySelectorAll("[data-person-filter]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll("[data-person-filter]").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      UI.state.filters.personIngresos = btn.dataset.personFilter;
-      renderIngresos();
-    });
-  });
-
-  // ============ Egresos ============
-  function renderEgresos() {
-    const list = document.getElementById("list-egresos");
-    const filter = UI.state.filters.personEgresos;
-    let items = window.Store.transacciones.filter(t => t.tipo === TIPO_EGRESO);
-    if (filter !== "all") items = items.filter(t => t.persona === filter);
-    renderTxList(list, items, "egreso");
-
-    const total = items.reduce((a, t) => a + Number(t.monto), 0);
-    document.getElementById("egresos-total").textContent = UI.fmtL(total);
-  }
-
-  document.querySelectorAll("[data-person-filter-eg]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll("[data-person-filter-eg]").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      UI.state.filters.personEgresos = btn.dataset.personFilterEg;
-      renderEgresos();
-    });
-  });
-
-  function renderTxList(ul, items, tipo) {
-    ul.innerHTML = "";
+    list.innerHTML = "";
     if (items.length === 0) {
-      ul.innerHTML = `<li class="empty">Aún no hay ${tipo === "ingreso" ? "ingresos" : "egresos"} registrados.</li>`;
-      return;
+      list.innerHTML = `<li class="empty">Aún no hay movimientos registrados.</li>`;
+    } else {
+      items.forEach(t => list.appendChild(renderTxItem(t)));
     }
-    items.forEach(t => {
-      const cuenta = window.Store.cuentas.find(c => c.id === t.cuenta);
-      const personaLbl = t.persona === "hector" ? "Héctor" : "Sonia";
-      const titulo = tipo === "ingreso"
-        ? (t.descripcion || (t.categoria ? t.categoria : "Salario"))
-        : (t.categoria || "Sin categoría");
-      const subt = `${personaLbl} · ${cuenta?.nombre || "?"} · ${UI.fmtShortDate(t.fecha)}`;
-      const li = document.createElement("li");
-      li.className = "tx-item";
-      li.dataset.id = t.id;
-      li.innerHTML = `
-        <div class="tx-icon ${tipo}">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4">
-            ${tipo === "ingreso"
-              ? '<path d="M12 19V5"/><path d="M5 12l7-7 7 7"/>'
-              : '<path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/>'}
-          </svg>
-        </div>
-        <div class="tx-main">
-          <span class="tx-title">${escapeHtml(titulo)}${t.descripcion && t.categoria ? ` <span class="muted small">— ${escapeHtml(t.descripcion)}</span>` : ""}</span>
-          <span class="tx-meta">${escapeHtml(subt)}</span>
-        </div>
-        <div class="tx-amount ${tipo}">
-          ${tipo === "ingreso" ? "+" : "−"}${UI.fmtL(t.monto)}
-          ${t.moneda === "USD" ? `<div class="muted small">$${Number(t.montoOriginal).toFixed(2)}</div>` : ""}
-        </div>
-      `;
-      li.addEventListener("click", () => promptDeleteTx(t));
-      ul.appendChild(li);
-    });
+
+    const totalEl = document.getElementById("movs-total");
+    const labelEl = document.getElementById("movs-total-label");
+    if (filter === "all") {
+      const neto = items.reduce((a, t) => a + (t.tipo === TIPO_INGRESO ? 1 : -1) * Number(t.monto), 0);
+      labelEl.textContent = "Neto mostrado";
+      totalEl.textContent = (neto >= 0 ? "+" : "−") + UI.fmtL(Math.abs(neto));
+      totalEl.style.color = neto >= 0 ? "var(--color-income)" : "var(--color-expense)";
+    } else {
+      labelEl.textContent = filter === TIPO_INGRESO ? "Total ingresos" : "Total egresos";
+      const total = items.reduce((a, t) => a + Number(t.monto), 0);
+      totalEl.textContent = UI.fmtL(total);
+      totalEl.style.color = "";
+    }
   }
+
+  function renderTxItem(t) {
+    const cuenta = window.Store.cuentas.find(c => c.id === t.cuenta);
+    const legacy = t.persona === "hector" ? "Héctor · " : t.persona === "sonia" ? "Sonia · " : "";
+    const titulo = t.tipo === TIPO_INGRESO
+      ? (t.descripcion || (t.categoria ? t.categoria : "Salario"))
+      : (t.categoria || "Sin categoría");
+    const subt = `${legacy}${cuenta ? UI.cuentaLabel(cuenta, window.Store.cuentas) : "?"} · ${UI.fmtShortDate(t.fecha)}`;
+    const li = document.createElement("li");
+    li.className = "tx-item";
+    li.dataset.id = t.id;
+    li.innerHTML = `
+      <div class="tx-icon ${t.tipo}">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4">
+          ${t.tipo === TIPO_INGRESO
+            ? '<path d="M12 19V5"/><path d="M5 12l7-7 7 7"/>'
+            : '<path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/>'}
+        </svg>
+      </div>
+      <div class="tx-main">
+        <span class="tx-title">${escapeHtml(titulo)}${t.descripcion && t.categoria && t.tipo === TIPO_EGRESO ? ` <span class="muted small">— ${escapeHtml(t.descripcion)}</span>` : ""}</span>
+        <span class="tx-meta">${escapeHtml(subt)}</span>
+      </div>
+      <div class="tx-amount ${t.tipo}">
+        ${t.tipo === TIPO_INGRESO ? "+" : "−"}${UI.fmtL(t.monto)}
+        ${t.moneda === "USD" ? `<div class="muted small">$${Number(t.montoOriginal).toFixed(2)}</div>` : ""}
+      </div>
+    `;
+    li.addEventListener("click", () => promptDeleteTx(t));
+    return li;
+  }
+
+  document.querySelectorAll("[data-tx-filter]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-tx-filter]").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      UI.state.filters.tx = btn.dataset.txFilter;
+      renderMovimientos();
+    });
+  });
 
   function promptDeleteTx(t) {
     UI.confirmModal(
@@ -208,32 +237,296 @@
     );
   }
 
-  // ============ Balance ============
-  function renderBalance() {
-    const cuentas = window.Store.cuentas;
-    const totalH = cuentas.filter(c => c.propietario === "hector").reduce((a, c) => a + Number(c.saldoActual || 0), 0);
-    const totalS = cuentas.filter(c => c.propietario === "sonia").reduce((a, c) => a + Number(c.saldoActual || 0), 0);
-    document.getElementById("balance-total").textContent = UI.fmtL(totalH + totalS);
-    document.getElementById("balance-total-hector").textContent = UI.fmtL(totalH);
-    document.getElementById("balance-total-sonia").textContent = UI.fmtL(totalS);
+  // ============ Captura rápida ============
+  document.getElementById("btn-quick-ingreso").addEventListener("click", () => openQuick(TIPO_INGRESO));
+  document.getElementById("btn-quick-egreso").addEventListener("click", () => openQuick(TIPO_EGRESO));
 
-    renderAccountList("cuentas-hector", cuentas.filter(c => c.propietario === "hector"));
-    renderAccountList("cuentas-sonia", cuentas.filter(c => c.propietario === "sonia"));
+  function openQuick(tipo) {
+    quick.tipo = tipo;
+    quick.otra = false;
+    const form = document.getElementById("form-quick");
+    form.reset();
+    document.getElementById("q-tipo").value = tipo;
+    document.getElementById("quick-title").textContent = tipo === TIPO_INGRESO ? "Nuevo ingreso" : "Nuevo egreso";
+    document.getElementById("q-mon-hnl").checked = true;
+    document.getElementById("q-simbolo").textContent = "L";
+    document.getElementById("q-conversion").classList.add("hidden");
+    document.getElementById("q-otra-block").classList.add("hidden");
+    document.getElementById("q-nueva-label").classList.add("hidden");
+    document.getElementById("q-detalles").removeAttribute("open");
+    document.getElementById("q-fecha").value = new Date().toISOString().slice(0, 10);
+
+    // método por defecto: el último usado en este teléfono
+    const metodo = localStorage.getItem(LS_METODO);
+    if (metodo) document.getElementById("q-metodo").value = metodo;
+
+    populateQuickCuentas();
+    buildChips();
+    UI.openModal("modal-quick");
+    setTimeout(() => document.getElementById("q-monto").focus(), 120);
   }
 
-  function renderAccountList(id, list) {
-    const ul = document.getElementById(id);
+  function populateQuickCuentas() {
+    const sel = document.getElementById("q-cuenta");
+    const cuentas = [...window.Store.cuentas].sort((a, b) => a.nombre.localeCompare(b.nombre));
+    sel.innerHTML = cuentas.length
+      ? cuentas.map(c => `<option value="${c.id}">${escapeHtml(UI.cuentaLabel(c, cuentas))}</option>`).join("")
+      : `<option value="">— sin cuentas; agrega una en Ajustes —</option>`;
+    const last = localStorage.getItem(LS_CUENTA);
+    if (last && cuentas.some(c => c.id === last)) sel.value = last;
+  }
+
+  function topCategoriasEgreso() {
+    const since = Date.now() - 90 * 86400000;
+    const freq = {};
+    window.Store.transacciones.forEach(t => {
+      if (t.tipo !== TIPO_EGRESO || !t.categoria) return;
+      const f = t.fecha?.toDate?.() || new Date(t.fecha);
+      if (f.getTime() < since) return;
+      freq[t.categoria] = (freq[t.categoria] || 0) + 1;
+    });
+    const top = Object.entries(freq).sort((a, b) => b[1] - a[1]).map(e => e[0]);
+    if (top.length < 6) {
+      for (const c of window.Store.categorias.map(c => c.nombre)) {
+        if (top.length >= 6) break;
+        if (!top.includes(c) && c !== "Otros") top.push(c);
+      }
+    }
+    return top.slice(0, 6);
+  }
+
+  function buildChips() {
+    const cont = document.getElementById("q-chips");
+    const label = document.getElementById("q-chips-label");
+    cont.innerHTML = "";
+    quick.cat = null;
+
+    const addChip = (text, value, onSelect) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "chip";
+      b.textContent = text;
+      b.dataset.value = value;
+      b.addEventListener("click", () => {
+        cont.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+        b.classList.add("active");
+        onSelect(value);
+      });
+      cont.appendChild(b);
+      return b;
+    };
+
+    if (quick.tipo === TIPO_INGRESO) {
+      label.textContent = "Tipo de ingreso";
+      const last = localStorage.getItem(LS_CAT_INGRESO) || "Salario";
+      const sal = addChip("Salario", "Salario", v => { quick.cat = v; quick.otra = false; });
+      const otr = addChip("Otros", "Otros", v => {
+        quick.cat = v; quick.otra = false;
+        // "Otros" pide una pequeña descripción de qué ingreso es
+        document.getElementById("q-detalles").setAttribute("open", "");
+        document.getElementById("q-descripcion").focus();
+      });
+      (last === "Otros" ? otr : sal).classList.add("active");
+      quick.cat = last === "Otros" ? "Otros" : "Salario";
+      document.getElementById("q-otra-block").classList.add("hidden");
+    } else {
+      label.textContent = "Categoría";
+      const top = topCategoriasEgreso();
+      const last = localStorage.getItem(LS_CAT_EGRESO);
+      top.forEach(cat => {
+        const chip = addChip(cat, cat, v => {
+          quick.cat = v; quick.otra = false;
+          document.getElementById("q-otra-block").classList.add("hidden");
+        });
+        if (cat === last) { chip.classList.add("active"); quick.cat = cat; }
+      });
+      addChip("Otra…", "__otra", () => {
+        quick.otra = true; quick.cat = null;
+        populateQCategoriaFull();
+        document.getElementById("q-otra-block").classList.remove("hidden");
+      });
+    }
+  }
+
+  function populateQCategoriaFull() {
+    const sel = document.getElementById("q-categoria");
+    const grupos = {};
+    window.Store.categorias.forEach(c => {
+      const g = c.grupo || "Otros";
+      (grupos[g] = grupos[g] || []).push(c);
+    });
+    let html = `<option value="">Selecciona...</option>`;
+    Object.entries(grupos).forEach(([grupo, cats]) => {
+      cats.sort((a, b) => a.nombre.localeCompare(b.nombre));
+      html += `<optgroup label="${escapeHtml(grupo)}">`;
+      cats.forEach(c => { html += `<option value="${escapeHtml(c.nombre)}">${escapeHtml(c.nombre)}</option>`; });
+      html += `</optgroup>`;
+    });
+    sel.innerHTML = html;
+  }
+
+  document.getElementById("q-categoria").addEventListener("change", (e) => {
+    document.getElementById("q-nueva-label").classList.toggle("hidden", e.target.value !== "Otros");
+  });
+
+  // Conversión en vivo
+  function updateConversionPreview() {
+    const monto = parseMonto();
+    const moneda = document.querySelector("input[name='q-moneda']:checked")?.value || "HNL";
+    document.getElementById("q-simbolo").textContent = moneda === "USD" ? "$" : "L";
+    const el = document.getElementById("q-conversion");
+    if (moneda === "USD" && monto > 0) {
+      const tasa = window.Exchange.current.rate;
+      el.textContent = `≈ ${UI.fmtL(monto * tasa)} (tasa: ${Number(tasa).toFixed(4)})`;
+      el.classList.remove("hidden");
+    } else {
+      el.classList.add("hidden");
+    }
+  }
+  document.getElementById("q-monto").addEventListener("input", updateConversionPreview);
+  document.querySelectorAll("input[name='q-moneda']").forEach(r => r.addEventListener("change", updateConversionPreview));
+
+  function parseMonto() {
+    const raw = document.getElementById("q-monto").value
+      .replace(/,/g, ".")
+      .replace(/[^0-9.]/g, "");
+    return parseFloat(raw) || 0;
+  }
+
+  document.getElementById("form-quick").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const tipo = document.getElementById("q-tipo").value;
+    const monto = parseMonto();
+    const moneda = document.querySelector("input[name='q-moneda']:checked")?.value || "HNL";
+    const descripcion = document.getElementById("q-descripcion").value.trim();
+    const metodoPago = document.getElementById("q-metodo").value;
+    const cuenta = document.getElementById("q-cuenta").value;
+    const fechaStr = document.getElementById("q-fecha").value;
+
+    if (!monto || monto <= 0) { UI.toast("Escribe el monto", "error"); return; }
+    if (!cuenta) { UI.toast("Agrega una cuenta en Ajustes primero", "error"); return; }
+
+    let categoria = quick.cat;
+    if (tipo === TIPO_EGRESO) {
+      if (quick.otra) {
+        categoria = document.getElementById("q-categoria").value || "";
+        if (categoria === "Otros") {
+          const nueva = document.getElementById("q-categoria-nueva").value.trim();
+          if (nueva) {
+            try { await window.Store.addCategoria(nueva, "Otros"); categoria = nueva; }
+            catch (err) { console.warn(err); }
+          }
+        }
+      }
+      if (!categoria) categoria = "Sin categoría";
+    } else {
+      categoria = categoria || "Salario";
+      if (categoria === "Otros" && !descripcion) {
+        document.getElementById("q-detalles").setAttribute("open", "");
+        UI.toast("Describe de qué es el ingreso", "error");
+        return;
+      }
+    }
+
+    const fecha = fechaStr ? new Date(fechaStr + "T12:00:00") : new Date();
+
+    try {
+      await window.Store.addTransaccion({
+        tipo, persona: "hs", monto, moneda,
+        categoria, descripcion, metodoPago, cuenta, fecha
+      });
+      // recordar preferencias de este teléfono
+      localStorage.setItem(LS_CUENTA, cuenta);
+      localStorage.setItem(LS_METODO, metodoPago);
+      if (tipo === TIPO_EGRESO && categoria !== "Sin categoría") localStorage.setItem(LS_CAT_EGRESO, categoria);
+      if (tipo === TIPO_INGRESO) localStorage.setItem(LS_CAT_INGRESO, quick.cat || "Salario");
+
+      UI.closeModal("modal-quick");
+      UI.toast(tipo === TIPO_INGRESO ? "Ingreso registrado ✓" : "Egreso registrado ✓", "success");
+    } catch (err) {
+      UI.toast("Error: " + err.message, "error");
+    }
+  });
+
+  // ============ Dictado por voz ============
+  function initVoice() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const micMonto = document.getElementById("q-mic");
+    const micDesc = document.getElementById("q-mic-desc");
+    if (!SR) {
+      micMonto.classList.add("hidden");
+      micDesc.classList.add("hidden");
+      return;
+    }
+    let activo = null;
+
+    function dictate(btn, onText) {
+      if (activo) { try { activo.abort(); } catch (_) {} activo = null; return; }
+      const rec = new SR();
+      rec.lang = "es-HN";
+      rec.interimResults = false;
+      rec.maxAlternatives = 1;
+      activo = rec;
+      btn.classList.add("listening");
+      rec.onresult = (ev) => {
+        const transcript = ev.results?.[0]?.[0]?.transcript || "";
+        if (transcript) onText(transcript);
+      };
+      rec.onerror = (ev) => {
+        if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
+          UI.toast("Permiso de micrófono denegado", "error");
+        } else if (ev.error !== "aborted" && ev.error !== "no-speech") {
+          UI.toast("No se pudo escuchar, intenta de nuevo", "error");
+        }
+      };
+      rec.onend = () => {
+        btn.classList.remove("listening");
+        activo = null;
+      };
+      try { rec.start(); } catch (_) { btn.classList.remove("listening"); activo = null; }
+    }
+
+    micMonto.addEventListener("click", () => dictate(micMonto, (texto) => {
+      const t = texto.toLowerCase();
+      // moneda dictada: "veinte dólares" → USD; "lempiras" → HNL
+      if (/d[oó]lar|usd/.test(t)) {
+        document.getElementById("q-mon-usd").checked = true;
+      } else if (/lempira/.test(t)) {
+        document.getElementById("q-mon-hnl").checked = true;
+      }
+      // el STT normaliza los números en español a dígitos ("trescientos" → 300)
+      const m = t.replace(/,/g, ".").match(/(\d+(?:\.\d+)?)/);
+      if (m) {
+        document.getElementById("q-monto").value = m[1];
+        updateConversionPreview();
+      } else {
+        UI.toast(`No entendí el monto ("${texto}")`, "error");
+      }
+    }));
+
+    micDesc.addEventListener("click", () => dictate(micDesc, (texto) => {
+      const input = document.getElementById("q-descripcion");
+      input.value = (input.value + " " + texto).trim();
+    }));
+  }
+
+  // ============ Cuentas (en Ajustes) ============
+  function renderCuentasAjustes() {
+    const cuentas = window.Store.cuentas;
+    const total = cuentas.reduce((a, c) => a + Number(c.saldoActual || 0), 0);
+    document.getElementById("ajustes-total").textContent = UI.fmtL(total);
+
+    const ul = document.getElementById("lista-cuentas");
     ul.innerHTML = "";
-    if (list.length === 0) {
+    if (cuentas.length === 0) {
       ul.innerHTML = `<li class="muted small">Sin cuentas. Agrega una.</li>`;
       return;
     }
-    list.sort((a, b) => a.nombre.localeCompare(b.nombre));
-    list.forEach(c => {
+    [...cuentas].sort((a, b) => a.nombre.localeCompare(b.nombre)).forEach(c => {
       const li = document.createElement("li");
       li.className = "account-item";
       li.innerHTML = `
-        <span class="acc-name">${escapeHtml(c.nombre)}</span>
+        <span class="acc-name">${escapeHtml(UI.cuentaLabel(c, cuentas))}</span>
         <span class="acc-saldo">${UI.fmtL(c.saldoActual)}</span>
         <button class="acc-edit" data-id="${c.id}" title="Editar">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
@@ -246,56 +539,50 @@
 
   document.getElementById("btn-add-account").addEventListener("click", () => openCuentaModal(null));
 
-  // ============ Modal Cuenta ============
   function openCuentaModal(cuenta) {
     const form = document.getElementById("form-cuenta");
     form.reset();
     document.getElementById("cuenta-id").value = cuenta?.id || "";
     document.getElementById("modal-cuenta-title").textContent = cuenta ? "Editar cuenta" : "Nueva cuenta";
-    document.getElementById("cuenta-propietario").value = cuenta?.propietario || "hector";
     document.getElementById("cuenta-nombre").value = cuenta?.nombre || "";
     document.getElementById("cuenta-saldo").value = cuenta ? Number(cuenta.saldoInicial || 0).toFixed(2) : "0.00";
-    const delBtn = document.getElementById("btn-cuenta-delete");
-    delBtn.hidden = !cuenta;
+    document.getElementById("btn-cuenta-delete").hidden = !cuenta;
     UI.openModal("modal-cuenta");
   }
 
   document.getElementById("form-cuenta").addEventListener("submit", async (e) => {
     e.preventDefault();
     const id = document.getElementById("cuenta-id").value;
-    const propietario = document.getElementById("cuenta-propietario").value;
     const nombre = document.getElementById("cuenta-nombre").value.trim();
     const saldo = parseFloat(document.getElementById("cuenta-saldo").value) || 0;
-
     if (!nombre) { UI.toast("Nombre requerido", "error"); return; }
 
     try {
       if (id) {
-        // Si cambió el saldo inicial, doble confirmación
         const cuenta = window.Store.cuentas.find(c => c.id === id);
         if (cuenta && Number(cuenta.saldoInicial) !== saldo) {
           UI.confirmModal(
             "¿Ajustar saldo inicial?",
             `Vas a cambiar el saldo inicial de "${nombre}" a ${UI.fmtL(saldo)}. El saldo actual se recalculará considerando todos los ingresos y egresos. ¿Continuar?`,
             async () => {
-              await window.Store.updateCuenta(id, { propietario, nombre });
+              await window.Store.updateCuenta(id, { nombre });
               await window.Store.setSaldoInicial(id, saldo);
               UI.closeModal("modal-cuenta");
               UI.toast("Cuenta actualizada", "success");
             }
           );
         } else {
-          await window.Store.updateCuenta(id, { propietario, nombre });
+          await window.Store.updateCuenta(id, { nombre });
           UI.closeModal("modal-cuenta");
           UI.toast("Cuenta actualizada", "success");
         }
       } else {
-        await window.Store.addCuenta({ propietario, nombre, saldoInicial: saldo });
+        await window.Store.addCuenta({ nombre, saldoInicial: saldo });
         UI.closeModal("modal-cuenta");
         UI.toast("Cuenta creada", "success");
       }
-    } catch (e) {
-      UI.toast("Error: " + e.message, "error");
+    } catch (err) {
+      UI.toast("Error: " + err.message, "error");
     }
   });
 
@@ -313,140 +600,53 @@
     );
   });
 
-  // ============ Modal Transacción ============
-  document.querySelectorAll("[data-open-modal='modal-tx']").forEach(btn => {
-    btn.addEventListener("click", () => openTxModal(btn.dataset.tipo));
-  });
-
-  function openTxModal(tipo) {
-    const form = document.getElementById("form-tx");
-    form.reset();
-    document.getElementById("tx-id").value = "";
-    document.getElementById("tx-tipo").value = tipo;
-    document.getElementById("modal-tx-title").textContent = tipo === "ingreso" ? "Nuevo ingreso" : "Nuevo egreso";
-
-    document.getElementById("lbl-tipo-ingreso").classList.toggle("hidden", tipo !== "ingreso");
-    document.getElementById("lbl-categoria").classList.toggle("hidden", tipo !== "egreso");
-    document.getElementById("lbl-categoria-nueva").classList.add("hidden");
-    document.getElementById("tx-conversion").classList.add("hidden");
-
-    document.getElementById("p-hector").checked = true;
-    document.getElementById("tx-moneda").value = "HNL";
-    document.getElementById("tx-fecha").value = new Date().toISOString().slice(0, 10);
-
-    populateCuentasSelect();
-    populateCategoriasSelect();
-    UI.openModal("modal-tx");
-  }
-
-  function populateCuentasSelect() {
-    const sel = document.getElementById("tx-cuenta");
-    if (!sel) return;
-    const personSel = document.querySelector("input[name='persona']:checked")?.value || "hector";
-    const cuentas = window.Store.cuentas
-      .filter(c => c.propietario === personSel)
-      .sort((a, b) => a.nombre.localeCompare(b.nombre));
-    sel.innerHTML = cuentas.length
-      ? cuentas.map(c => `<option value="${c.id}">${escapeHtml(c.nombre)}</option>`).join("")
-      : `<option value="">— sin cuentas; agrega una en Balance —</option>`;
-  }
-
-  function populateCategoriasSelect() {
-    const sel = document.getElementById("tx-categoria");
-    if (!sel) return;
-    const grupos = {};
-    window.Store.categorias.forEach(c => {
-      const g = c.grupo || "Otros";
-      (grupos[g] = grupos[g] || []).push(c);
+  // ============ Tema ============
+  function initThemeControls() {
+    const mode = UI.getThemeMode();
+    const radio = document.querySelector(`input[name='tema'][value='${mode}']`);
+    if (radio) radio.checked = true;
+    document.querySelectorAll("input[name='tema']").forEach(r => {
+      r.addEventListener("change", () => UI.applyTheme(r.value));
     });
-    let html = `<option value="">Selecciona...</option>`;
-    Object.entries(grupos).forEach(([grupo, cats]) => {
-      cats.sort((a, b) => a.nombre.localeCompare(b.nombre));
-      html += `<optgroup label="${escapeHtml(grupo)}">`;
-      cats.forEach(c => { html += `<option value="${escapeHtml(c.nombre)}">${escapeHtml(c.nombre)}</option>`; });
-      html += `</optgroup>`;
+    window.addEventListener("theme:changed", () => {
+      syncThemeMeta();
+      // los charts leen los colores del CSS al renderizar
+      if (!document.getElementById("app").classList.contains("hidden")) renderResumen();
     });
-    sel.innerHTML = html;
   }
 
-  document.querySelectorAll("input[name='persona']").forEach(r => {
-    r.addEventListener("change", populateCuentasSelect);
-  });
-
-  document.getElementById("tx-categoria").addEventListener("change", (e) => {
-    const lbl = document.getElementById("lbl-categoria-nueva");
-    lbl.classList.toggle("hidden", e.target.value !== "Otros");
-  });
-
-  function updateConversionPreview() {
-    const monto = parseFloat(document.getElementById("tx-monto").value) || 0;
-    const moneda = document.getElementById("tx-moneda").value;
-    const el = document.getElementById("tx-conversion");
-    if (moneda === "USD" && monto > 0) {
-      const tasa = window.Exchange.current.rate;
-      const hnl = monto * tasa;
-      el.textContent = `≈ ${UI.fmtL(hnl)} (tasa: ${tasa.toFixed(4)})`;
-      el.classList.remove("hidden");
-    } else {
-      el.classList.add("hidden");
-    }
+  function syncThemeMeta() {
+    const meta = document.getElementById("meta-theme");
+    if (meta) meta.setAttribute("content", UI.isDarkNow() ? "#0b1310" : "#f6f8f7");
   }
-  document.getElementById("tx-monto").addEventListener("input", updateConversionPreview);
-  document.getElementById("tx-moneda").addEventListener("change", updateConversionPreview);
 
-  document.getElementById("form-tx").addEventListener("submit", async (e) => {
+  // ============ Contraseña ============
+  document.getElementById("form-password").addEventListener("submit", (e) => {
     e.preventDefault();
-    const tipo = document.getElementById("tx-tipo").value;
-    const persona = document.querySelector("input[name='persona']:checked").value;
-    const monto = parseFloat(document.getElementById("tx-monto").value) || 0;
-    const moneda = document.getElementById("tx-moneda").value;
-    const descripcion = document.getElementById("tx-descripcion").value.trim();
-    const metodoPago = document.getElementById("tx-metodo").value;
-    const cuenta = document.getElementById("tx-cuenta").value;
-    const fechaStr = document.getElementById("tx-fecha").value;
-
-    if (!monto || monto <= 0) { UI.toast("Monto inválido", "error"); return; }
-    if (!cuenta) { UI.toast("Selecciona o crea una cuenta", "error"); return; }
-
-    let categoria = null;
-    let descFinal = descripcion;
-    if (tipo === "egreso") {
-      categoria = document.getElementById("tx-categoria").value;
-      if (!categoria) { UI.toast("Selecciona una categoría", "error"); return; }
-      if (categoria === "Otros") {
-        const nueva = document.getElementById("tx-categoria-nueva").value.trim();
-        if (nueva) {
-          await window.Store.addCategoria(nueva, "Otros");
-          categoria = nueva;
+    const actual = document.getElementById("pw-actual").value;
+    const nueva = document.getElementById("pw-nueva").value;
+    const confirma = document.getElementById("pw-confirma").value;
+    if (nueva !== confirma) { UI.toast("La confirmación no coincide", "error"); return; }
+    UI.confirmModal(
+      "Cambiar contraseña",
+      "El otro teléfono se desconectará dentro de ~1 hora y deberá entrar con la nueva contraseña. ¿Continuar?",
+      async () => {
+        try {
+          await window.FBase.changePassword(actual, nueva);
+          document.getElementById("form-password").reset();
+          UI.toast("Contraseña actualizada ✓", "success");
+        } catch (err) {
+          UI.toast(err.message, "error");
         }
       }
-    } else {
-      const tipoIng = document.getElementById("tx-tipo-ingreso").value;
-      categoria = tipoIng === "salario" ? "Salario" : "Otros";
-      if (tipoIng === "otros" && !descripcion) {
-        UI.toast("Describe el tipo de ingreso", "error"); return;
-      }
-    }
-
-    const fecha = fechaStr ? new Date(fechaStr + "T12:00:00") : new Date();
-
-    try {
-      await window.Store.addTransaccion({
-        tipo, persona, monto, moneda,
-        categoria, descripcion: descFinal,
-        metodoPago, cuenta, fecha
-      });
-      UI.closeModal("modal-tx");
-      UI.toast(tipo === "ingreso" ? "Ingreso registrado" : "Egreso registrado", "success");
-    } catch (err) {
-      UI.toast("Error: " + err.message, "error");
-    }
+    );
   });
 
-  // ============ Configuración ============
+  // ============ Configuración: tasa ============
   function renderTasaConfig() {
     const cur = window.Exchange.current;
-    document.getElementById("tasa-input").value = Number(cur.rate).toFixed(4);
+    const input = document.getElementById("tasa-input");
+    if (document.activeElement !== input) input.value = Number(cur.rate).toFixed(4);
     document.getElementById("tasa-fuente").textContent =
       cur.source === "api" ? "API automática" : cur.source === "manual" ? "Manual" : "Por defecto";
     document.getElementById("tasa-fecha").textContent = cur.date ? UI.fmtDate(cur.date) : "—";
@@ -468,14 +668,14 @@
     } catch (e) { UI.toast("Error: " + e.message, "error"); }
   });
 
-  // Export / Import
+  // ============ Respaldo ============
   document.getElementById("btn-export").addEventListener("click", async () => {
     const data = await window.Store.exportData();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `finanzas-hs-${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `finanzas-hs-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
     UI.toast("Respaldo exportado", "success");
@@ -504,28 +704,21 @@
 
   document.getElementById("btn-logout").addEventListener("click", () => {
     UI.confirmModal("Cerrar sesión", "¿Salir de la app en este dispositivo?", async () => {
-      localStorage.removeItem("hs_authenticated");
-      sessionStorage.removeItem("hs_authenticated");
-      window.Store.stopListeners();
+      teardown();
       await window.FBase.signOutShared();
-      document.getElementById("app").classList.add("hidden");
-      document.getElementById("view-login").classList.add("active");
-      document.getElementById("login-password").value = "";
+      // onAuthChange muestra el login
     });
   });
 
   // ============ UI bindings ============
   function bindStaticUI() {
-    // Bottom nav
     document.querySelectorAll(".nav-btn").forEach(btn => {
       btn.addEventListener("click", () => UI.showView(btn.dataset.view));
     });
-    // Cerrar modales
     document.querySelectorAll("[data-close-modal]").forEach(el => {
       el.addEventListener("click", () => UI.closeAllModals());
     });
-    // Theme toggle
-    document.getElementById("btn-theme").addEventListener("click", UI.toggleTheme);
+    document.getElementById("chip-balance").addEventListener("click", () => UI.showView("resumen"));
   }
 
   function updateConnectionStatus() {
@@ -540,11 +733,28 @@
     }
   }
 
-  // ============ Service worker ============
+  // ============ Service worker + aviso de actualización ============
   function registerServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
+    const banner = document.getElementById("update-banner");
+    banner.addEventListener("click", () => location.reload());
+
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("sw.js").catch(err => console.warn("SW reg failed:", err));
+      navigator.serviceWorker.register("sw.js").then(reg => {
+        reg.addEventListener("updatefound", () => {
+          const nuevo = reg.installing;
+          if (!nuevo) return;
+          nuevo.addEventListener("statechange", () => {
+            if (nuevo.state === "installed" && navigator.serviceWorker.controller) {
+              banner.classList.remove("hidden");
+            }
+          });
+        });
+        // iOS mantiene la PWA viva por días: buscar actualización al volver
+        document.addEventListener("visibilitychange", () => {
+          if (!document.hidden) reg.update().catch(() => {});
+        });
+      }).catch(err => console.warn("SW reg failed:", err));
     });
   }
 

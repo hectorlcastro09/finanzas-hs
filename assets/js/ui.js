@@ -1,10 +1,10 @@
 /* =============================================================
-   ui.js — Navegación, modales, toast, helpers
+   ui.js — Navegación, modales, toast, tema, helpers
    ============================================================= */
 
 const UI = {
-  currentView: "dashboard",
-  filters: { period: "month", personIngresos: "all", personEgresos: "all" },
+  currentView: "inicio",
+  filters: { period: "month", tx: "all" },
   toastTimer: null
 };
 
@@ -49,6 +49,7 @@ function confirmModal(title, msg, onOk) {
 // ---- Vista ----
 function showView(view) {
   UI.currentView = view;
+  document.body.dataset.view = view;
   document.querySelectorAll(".view-content").forEach(v => v.classList.remove("active"));
   document.getElementById("view-" + view)?.classList.add("active");
   document.querySelectorAll(".nav-btn").forEach(b => {
@@ -61,6 +62,13 @@ function showView(view) {
 function fmtL(n) {
   return "L. " + Number(n || 0).toLocaleString("es-HN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+function fmtLShort(n) {
+  return "L " + Number(n || 0).toLocaleString("es-HN", { maximumFractionDigits: 0 });
+}
+function fmtSigned(n) {
+  const v = Number(n || 0);
+  return (v >= 0 ? "+" : "−") + fmtLShort(Math.abs(v));
+}
 function fmtDate(d) {
   const dt = d?.toDate?.() || (typeof d === "string" ? new Date(d) : d);
   if (!dt || isNaN(dt)) return "—";
@@ -70,6 +78,17 @@ function fmtShortDate(d) {
   const dt = d?.toDate?.() || (typeof d === "string" ? new Date(d) : d);
   if (!dt || isNaN(dt)) return "—";
   return dt.toLocaleDateString("es-HN", { day: "2-digit", month: "short" });
+}
+
+// Etiqueta de cuenta: agrega " · H"/" · S" solo si el nombre está repetido
+// entre cuentas heredadas de la época por-persona.
+function cuentaLabel(cuenta, cuentas) {
+  if (!cuenta) return "?";
+  const dup = (cuentas || []).filter(c => c.nombre === cuenta.nombre).length > 1;
+  if (!dup) return cuenta.nombre;
+  if (cuenta.propietario === "hector") return cuenta.nombre + " · H";
+  if (cuenta.propietario === "sonia") return cuenta.nombre + " · S";
+  return cuenta.nombre;
 }
 
 // ---- Filtro por período ----
@@ -88,36 +107,48 @@ function filterByPeriod(transacciones, period) {
   });
 }
 
-// ---- Tema ----
-function applyTheme(theme) {
-  if (theme === "system") {
+// ---- Tema (claro / oscuro / sistema) ----
+const THEME_KEY = "theme";
+const mediaDark = window.matchMedia?.("(prefers-color-scheme: dark)");
+
+function getThemeMode() {
+  const saved = localStorage.getItem(THEME_KEY);
+  return saved === "light" || saved === "dark" ? saved : "system";
+}
+
+function isDarkNow() {
+  const attr = document.documentElement.getAttribute("data-theme");
+  if (attr) return attr === "dark";
+  return !!mediaDark?.matches;
+}
+
+function applyTheme(mode) {
+  if (mode === "system") {
     document.documentElement.removeAttribute("data-theme");
   } else {
-    document.documentElement.setAttribute("data-theme", theme);
+    document.documentElement.setAttribute("data-theme", mode);
   }
-  localStorage.setItem("theme", theme);
-}
-function toggleTheme() {
-  const current = document.documentElement.getAttribute("data-theme");
-  const next = current === "dark" ? "light" : "dark";
-  applyTheme(next);
+  localStorage.setItem(THEME_KEY, mode);
+  window.dispatchEvent(new CustomEvent("theme:changed"));
 }
 
 function initTheme() {
-  const saved = localStorage.getItem("theme");
-  if (saved && saved !== "system") {
-    document.documentElement.setAttribute("data-theme", saved);
-  } else if (window.matchMedia?.("(prefers-color-scheme: dark)").matches) {
-    document.documentElement.setAttribute("data-theme", "dark");
-  }
+  applyTheme(getThemeMode());
+  // En modo sistema, seguir los cambios del teléfono en vivo (día/noche)
+  mediaDark?.addEventListener?.("change", () => {
+    if (getThemeMode() === "system") {
+      window.dispatchEvent(new CustomEvent("theme:changed"));
+    }
+  });
 }
 
 // Adjuntamos métodos al MISMO objeto UI y lo exponemos como window.UI
 // para evitar problemas de scope entre <script> clásicos.
 Object.assign(UI, {
   toast, openModal, closeModal, closeAllModals, confirmModal,
-  showView, fmtL, fmtDate, fmtShortDate, filterByPeriod,
-  toggleTheme, initTheme
+  showView, fmtL, fmtLShort, fmtSigned, fmtDate, fmtShortDate,
+  cuentaLabel, filterByPeriod,
+  getThemeMode, isDarkNow, applyTheme, initTheme
 });
 UI.state = UI;        // backward compat para UI.state.filters
 window.UI = UI;

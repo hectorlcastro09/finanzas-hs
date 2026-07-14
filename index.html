@@ -3,27 +3,42 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0a8754" />
+  <meta id="meta-theme" name="theme-color" content="#f6f8f7" />
   <meta name="description" content="Finanzas Héctor & Sonia — control de ingresos, egresos y efectivo en tiempo real." />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Finanzas H&S" />
   <title>Finanzas H&S</title>
 
   <link rel="manifest" href="manifest.json" />
-  <link rel="icon" type="image/png" sizes="192x192" href="assets/img/icon-192.png" />
-  <link rel="apple-touch-icon" href="assets/img/icon-192.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/img/icon-any-192.png" />
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="assets/css/style.css" />
+  <link rel="stylesheet" href="assets/css/style.css?v=2" />
 </head>
 <body>
 
+<!-- ========== Fondo con fotos (privadas, cargan tras el login) ========== -->
+<div id="bg-slideshow" aria-hidden="true">
+  <div id="bg-a" class="bg-layer"></div>
+  <div id="bg-b" class="bg-layer"></div>
+  <div class="bg-scrim"></div>
+</div>
+
+<!-- ========== Splash mientras Firebase restaura la sesión ========== -->
+<div id="splash">
+  <img src="assets/img/login-logo.png" alt="" />
+</div>
+
 <!-- ========== Login ========== -->
-<section id="view-login" class="view view-login active">
+<section id="view-login" class="view view-login">
   <div class="login-card">
     <div class="login-logo">
-      <img src="assets/img/logo.svg" alt="H&S" />
+      <img src="assets/img/login-logo.png" alt="Just Smile" />
     </div>
     <h1>Finanzas H&amp;S</h1>
     <p class="muted">Ingresa la contraseña para continuar</p>
@@ -35,12 +50,12 @@
         </button>
       </div>
       <label class="checkbox">
-        <input type="checkbox" id="remember-device" /> Recordar en este dispositivo
+        <input type="checkbox" id="remember-device" checked /> Recordar en este dispositivo
       </label>
       <button type="submit" class="btn btn-primary btn-block">Entrar</button>
       <p id="login-error" class="error hidden">Contraseña incorrecta</p>
     </form>
-    <p class="footer-text">Solo Héctor y Sonia. Datos cifrados en Firebase.</p>
+    <p class="footer-text">Solo Héctor y Sonia · La primera vez en un teléfono se necesita internet</p>
   </div>
 </section>
 
@@ -48,21 +63,47 @@
 <div id="app" class="app hidden">
   <header class="app-header">
     <div class="brand">
-      <img src="assets/img/logo.svg" alt="" class="brand-logo" />
+      <img src="assets/img/login-logo.png" alt="" class="brand-logo" />
       <span class="brand-text">Finanzas H&amp;S</span>
     </div>
     <div class="header-actions">
       <span id="connection-status" class="conn-dot" title="Estado de conexión"></span>
-      <button class="btn-icon" id="btn-theme" aria-label="Cambiar tema">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      <button id="chip-balance" class="chip-balance" title="Balance del mes y del año">
+        <span id="chip-mes">—</span>
+        <span id="chip-anio">—</span>
       </button>
     </div>
   </header>
 
   <main class="app-main">
 
-    <!-- Dashboard -->
-    <section id="view-dashboard" class="view-content active">
+    <!-- Inicio: captura rápida -->
+    <section id="view-inicio" class="view-content active">
+      <div class="inicio-wrap">
+        <p class="inicio-saludo">¿Qué registramos hoy?</p>
+        <button class="btn-quick ingreso" id="btn-quick-ingreso">
+          <span class="bq-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+          </span>
+          <span class="bq-text">
+            <strong>Ingreso</strong>
+            <small>Dinero que entra</small>
+          </span>
+        </button>
+        <button class="btn-quick egreso" id="btn-quick-egreso">
+          <span class="bq-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></svg>
+          </span>
+          <span class="bq-text">
+            <strong>Egreso</strong>
+            <small>Dinero que sale</small>
+          </span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Resumen -->
+    <section id="view-resumen" class="view-content">
       <div class="page-title">
         <h2>Resumen</h2>
         <select id="filter-period" class="select-sm">
@@ -98,16 +139,16 @@
 
       <div class="chart-grid">
         <div class="chart-card">
-          <h3>Ingresos vs Egresos</h3>
+          <h3 id="chart-monthly-title">Por mes</h3>
+          <canvas id="chart-monthly"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Ingresos vs Egresos (6 meses)</h3>
           <canvas id="chart-trend"></canvas>
         </div>
         <div class="chart-card">
           <h3>Egresos por categoría</h3>
           <canvas id="chart-categories"></canvas>
-        </div>
-        <div class="chart-card">
-          <h3>Por persona</h3>
-          <canvas id="chart-person"></canvas>
         </div>
         <div class="chart-card">
           <h3>Por cuenta</h3>
@@ -116,83 +157,61 @@
       </div>
     </section>
 
-    <!-- Ingresos -->
-    <section id="view-ingresos" class="view-content">
-      <div class="page-title">
-        <h2>Ingresos</h2>
-        <button class="btn btn-primary btn-sm" data-open-modal="modal-tx" data-tipo="ingreso">+ Nuevo ingreso</button>
-      </div>
+    <!-- Movimientos -->
+    <section id="view-movimientos" class="view-content">
+      <div class="page-title"><h2>Movimientos</h2></div>
 
       <div class="tabs">
-        <button class="tab active" data-person-filter="all">General</button>
-        <button class="tab" data-person-filter="hector">Héctor</button>
-        <button class="tab" data-person-filter="sonia">Sonia</button>
+        <button class="tab active" data-tx-filter="all">Todos</button>
+        <button class="tab" data-tx-filter="ingreso">Ingresos</button>
+        <button class="tab" data-tx-filter="egreso">Egresos</button>
       </div>
 
       <div class="summary-row">
         <div class="summary-item">
-          <span class="muted">Total mostrado</span>
-          <strong id="ingresos-total">L. 0.00</strong>
+          <span class="muted" id="movs-total-label">Neto mostrado</span>
+          <strong id="movs-total">L. 0.00</strong>
         </div>
       </div>
 
-      <ul class="tx-list" id="list-ingresos">
-        <li class="empty">Aún no hay ingresos registrados.</li>
+      <ul class="tx-list" id="list-movimientos">
+        <li class="empty">Aún no hay movimientos registrados.</li>
       </ul>
     </section>
 
-    <!-- Egresos -->
-    <section id="view-egresos" class="view-content">
-      <div class="page-title">
-        <h2>Egresos</h2>
-        <button class="btn btn-primary btn-sm" data-open-modal="modal-tx" data-tipo="egreso">+ Nuevo egreso</button>
-      </div>
+    <!-- Ajustes -->
+    <section id="view-ajustes" class="view-content">
+      <div class="page-title"><h2>Ajustes</h2></div>
 
-      <div class="tabs">
-        <button class="tab active" data-person-filter-eg="all">General</button>
-        <button class="tab" data-person-filter-eg="hector">Héctor</button>
-        <button class="tab" data-person-filter-eg="sonia">Sonia</button>
-      </div>
-
-      <div class="summary-row">
-        <div class="summary-item">
-          <span class="muted">Total mostrado</span>
-          <strong id="egresos-total">L. 0.00</strong>
+      <div class="card">
+        <h3>Tema</h3>
+        <div class="segmented seg-3">
+          <input type="radio" name="tema" id="tema-claro" value="light" />
+          <label for="tema-claro">Claro</label>
+          <input type="radio" name="tema" id="tema-oscuro" value="dark" />
+          <label for="tema-oscuro">Oscuro</label>
+          <input type="radio" name="tema" id="tema-sistema" value="system" />
+          <label for="tema-sistema">Sistema</label>
         </div>
+        <p class="muted small">"Sistema" sigue el modo del teléfono: de día claro, de noche oscuro (si el teléfono tiene apariencia automática).</p>
       </div>
 
-      <ul class="tx-list" id="list-egresos">
-        <li class="empty">Aún no hay egresos registrados.</li>
-      </ul>
-    </section>
-
-    <!-- Balance -->
-    <section id="view-balance" class="view-content">
-      <div class="page-title"><h2>Balance general</h2></div>
-
-      <div class="kpi-card kpi-primary balance-total-card">
-        <div class="kpi-label">Total de activos</div>
-        <div class="kpi-value" id="balance-total">L. 0.00</div>
+      <div class="card">
+        <h3>Cuentas</h3>
+        <p class="muted">Total de activos: <strong id="ajustes-total">L. 0.00</strong></p>
+        <ul class="account-list" id="lista-cuentas"></ul>
+        <button class="btn btn-outline btn-block" id="btn-add-account">+ Agregar cuenta</button>
       </div>
 
-      <div class="balance-section">
-        <h3>Héctor Castro</h3>
-        <div class="muted">Total: <strong id="balance-total-hector">L. 0.00</strong></div>
-        <ul class="account-list" id="cuentas-hector"></ul>
+      <div class="card">
+        <h3>Fotos de fondo</h3>
+        <p class="muted small">Se ven en ambos teléfonos, solo dentro de la app (privadas). <span id="fondos-hint"></span></p>
+        <div id="fondos-grid" class="fondos-grid"></div>
+        <label class="btn btn-outline btn-block">
+          + Agregar fotos
+          <input type="file" id="file-fondos" accept="image/*" multiple hidden />
+        </label>
       </div>
-
-      <div class="balance-section">
-        <h3>Sonia Chinchilla</h3>
-        <div class="muted">Total: <strong id="balance-total-sonia">L. 0.00</strong></div>
-        <ul class="account-list" id="cuentas-sonia"></ul>
-      </div>
-
-      <button class="btn btn-outline btn-block" id="btn-add-account">+ Agregar cuenta</button>
-    </section>
-
-    <!-- Configuración -->
-    <section id="view-config" class="view-content">
-      <div class="page-title"><h2>Configuración</h2></div>
 
       <div class="card">
         <h3>Tasa de cambio USD → HNL</h3>
@@ -206,6 +225,23 @@
           <button class="btn btn-primary btn-sm" id="btn-tasa-save">Guardar</button>
         </div>
         <p class="muted small">Si el BCH publicó una tasa distinta, edítala manualmente.</p>
+      </div>
+
+      <div class="card">
+        <h3>Contraseña</h3>
+        <form id="form-password" autocomplete="off">
+          <label>Contraseña actual
+            <input type="password" id="pw-actual" required autocomplete="current-password" />
+          </label>
+          <label>Nueva contraseña
+            <input type="password" id="pw-nueva" required minlength="6" autocomplete="new-password" />
+          </label>
+          <label>Confirmar nueva contraseña
+            <input type="password" id="pw-confirma" required minlength="6" autocomplete="new-password" />
+          </label>
+          <button type="submit" class="btn btn-primary btn-block">Cambiar contraseña</button>
+          <p class="muted small">El otro teléfono se desconectará dentro de ~1 hora y deberá entrar con la nueva contraseña.</p>
+        </form>
       </div>
 
       <div class="card">
@@ -227,8 +263,8 @@
 
       <div class="card">
         <h3>Acerca de</h3>
-        <p class="muted small">Finanzas H&amp;S · PWA · v1.0</p>
-        <p class="muted small">Inspirada en el Excel original de Héctor &amp; Sonia.</p>
+        <p class="muted small">Finanzas H&amp;S · PWA · v2.0</p>
+        <p class="muted small">Hecha con amor para Héctor, Sonia y Elízabeth.</p>
       </div>
     </section>
 
@@ -236,107 +272,97 @@
 
   <!-- Bottom nav -->
   <nav class="bottom-nav">
-    <button class="nav-btn active" data-view="dashboard">
+    <button class="nav-btn active" data-view="inicio">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg>
       <span>Inicio</span>
     </button>
-    <button class="nav-btn" data-view="ingresos">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
-      <span>Ingresos</span>
+    <button class="nav-btn" data-view="resumen">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+      <span>Resumen</span>
     </button>
-    <button class="nav-btn" data-view="egresos">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></svg>
-      <span>Egresos</span>
+    <button class="nav-btn" data-view="movimientos">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+      <span>Movimientos</span>
     </button>
-    <button class="nav-btn" data-view="balance">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
-      <span>Balance</span>
-    </button>
-    <button class="nav-btn" data-view="config">
+    <button class="nav-btn" data-view="ajustes">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-      <span>Más</span>
+      <span>Ajustes</span>
     </button>
   </nav>
 </div>
 
-<!-- ========== Modal: Nueva transacción ========== -->
-<div id="modal-tx" class="modal hidden">
+<!-- ========== Sheet: captura rápida ========== -->
+<div id="modal-quick" class="modal hidden">
   <div class="modal-backdrop" data-close-modal></div>
-  <div class="modal-content">
+  <div class="modal-content sheet">
     <header class="modal-header">
-      <h3 id="modal-tx-title">Nuevo registro</h3>
+      <h3 id="quick-title">Nuevo ingreso</h3>
       <button class="btn-icon" data-close-modal aria-label="Cerrar">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
     </header>
-    <form id="form-tx" class="modal-body">
-      <input type="hidden" id="tx-id" />
-      <input type="hidden" id="tx-tipo" />
+    <form id="form-quick" class="modal-body">
+      <input type="hidden" id="q-tipo" />
 
-      <label>Persona
-        <div class="segmented">
-          <input type="radio" name="persona" id="p-hector" value="hector" checked />
-          <label for="p-hector">Héctor</label>
-          <input type="radio" name="persona" id="p-sonia" value="sonia" />
-          <label for="p-sonia">Sonia</label>
-        </div>
-      </label>
+      <div class="amount-wrap">
+        <span class="amount-symbol" id="q-simbolo">L</span>
+        <input type="text" id="q-monto" inputmode="decimal" placeholder="0.00" autocomplete="off" aria-label="Monto" />
+        <button type="button" class="btn-icon mic" id="q-mic" title="Dictar monto" aria-label="Dictar monto">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v4"/><path d="M8 23h8"/></svg>
+        </button>
+      </div>
 
-      <label id="lbl-tipo-ingreso" class="hidden">Tipo de ingreso
-        <select id="tx-tipo-ingreso">
-          <option value="salario">Salario</option>
-          <option value="otros">Otros</option>
-        </select>
-      </label>
+      <div class="segmented" id="q-moneda-seg">
+        <input type="radio" name="q-moneda" id="q-mon-hnl" value="HNL" checked />
+        <label for="q-mon-hnl">L (HNL)</label>
+        <input type="radio" name="q-moneda" id="q-mon-usd" value="USD" />
+        <label for="q-mon-usd">$ (USD)</label>
+      </div>
+      <p id="q-conversion" class="muted small hidden"></p>
 
-      <label id="lbl-categoria" class="hidden">Categoría
-        <select id="tx-categoria">
-          <option value="">Selecciona...</option>
-        </select>
-      </label>
+      <div class="q-section">
+        <span class="q-label" id="q-chips-label">Categoría</span>
+        <div class="chips" id="q-chips"></div>
+      </div>
 
-      <label id="lbl-categoria-nueva" class="hidden">Nueva categoría
-        <input type="text" id="tx-categoria-nueva" placeholder="Escribe el nombre" />
-      </label>
-
-      <div class="grid-2">
-        <label>Monto
-          <input type="number" step="0.01" min="0" id="tx-monto" required placeholder="0.00" />
+      <div class="q-section hidden" id="q-otra-block">
+        <label>Categoría completa
+          <select id="q-categoria"></select>
         </label>
-        <label>Moneda
-          <select id="tx-moneda">
-            <option value="HNL">L. (HNL)</option>
-            <option value="USD">$ (USD)</option>
+        <label class="hidden" id="q-nueva-label">Nueva categoría
+          <input type="text" id="q-categoria-nueva" placeholder="Escribe el nombre" />
+        </label>
+      </div>
+
+      <div class="q-section">
+        <label>Cuenta
+          <select id="q-cuenta" required></select>
+        </label>
+      </div>
+
+      <details id="q-detalles">
+        <summary>Más detalles</summary>
+        <label>Descripción
+          <span class="input-mic">
+            <input type="text" id="q-descripcion" placeholder="Opcional / detalle" />
+            <button type="button" class="btn-icon mic" id="q-mic-desc" title="Dictar descripción" aria-label="Dictar descripción">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v4"/><path d="M8 23h8"/></svg>
+            </button>
+          </span>
+        </label>
+        <label>Método de pago
+          <select id="q-metodo">
+            <option value="transferencia">Transferencia</option>
+            <option value="tarjeta_credito">Tarjeta de crédito</option>
+            <option value="efectivo">Efectivo</option>
           </select>
         </label>
-      </div>
+        <label>Fecha
+          <input type="date" id="q-fecha" required />
+        </label>
+      </details>
 
-      <p id="tx-conversion" class="muted small hidden"></p>
-
-      <label>Descripción
-        <input type="text" id="tx-descripcion" placeholder="Opcional / detalle" />
-      </label>
-
-      <label>Método de pago
-        <select id="tx-metodo">
-          <option value="transferencia">Transferencia</option>
-          <option value="tarjeta_credito">Tarjeta de crédito</option>
-          <option value="efectivo">Efectivo</option>
-        </select>
-      </label>
-
-      <label>Cuenta
-        <select id="tx-cuenta" required></select>
-      </label>
-
-      <label>Fecha
-        <input type="date" id="tx-fecha" required />
-      </label>
-
-      <div class="row-buttons">
-        <button type="button" class="btn btn-outline" data-close-modal>Cancelar</button>
-        <button type="submit" class="btn btn-primary">Guardar</button>
-      </div>
+      <button type="submit" class="btn btn-primary btn-block btn-lg" id="q-guardar">Guardar</button>
     </form>
   </div>
 </div>
@@ -353,13 +379,6 @@
     </header>
     <form id="form-cuenta" class="modal-body">
       <input type="hidden" id="cuenta-id" />
-
-      <label>Propietario
-        <select id="cuenta-propietario" required>
-          <option value="hector">Héctor</option>
-          <option value="sonia">Sonia</option>
-        </select>
-      </label>
 
       <label>Nombre
         <input type="text" id="cuenta-nombre" required placeholder="Ej. BAC" />
@@ -397,21 +416,25 @@
   </div>
 </div>
 
+<!-- Aviso de nueva versión -->
+<button id="update-banner" class="update-banner hidden">Nueva versión disponible — toca para actualizar</button>
+
 <!-- Toast -->
 <div id="toast" class="toast hidden"></div>
 
 <!-- Firebase + Chart.js -->
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
 
 <!-- App scripts -->
-<script src="assets/js/firebase.js"></script>
-<script src="assets/js/exchange.js"></script>
-<script src="assets/js/store.js"></script>
-<script src="assets/js/charts.js"></script>
-<script src="assets/js/ui.js"></script>
-<script src="assets/js/app.js"></script>
+<script src="assets/js/firebase.js?v=2"></script>
+<script src="assets/js/exchange.js?v=2"></script>
+<script src="assets/js/store.js?v=2"></script>
+<script src="assets/js/charts.js?v=2"></script>
+<script src="assets/js/ui.js?v=2"></script>
+<script src="assets/js/fondos.js?v=2"></script>
+<script src="assets/js/app.js?v=2"></script>
 </body>
 </html>

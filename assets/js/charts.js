@@ -2,15 +2,15 @@
    charts.js — Gráficos del dashboard con Chart.js
    ============================================================= */
 
-const charts = { trend: null, categories: null, person: null, accounts: null };
+const charts = { monthly: null, trend: null, categories: null, accounts: null };
 
 const PALETTE = [
   "#0a8754", "#3a86ff", "#f4a261", "#e63946", "#8338ec",
   "#ff006e", "#06ae9b", "#ffbe0b", "#118ab2", "#073b4c",
-  "#118ab2", "#ef476f", "#06d6a0", "#118ab2", "#26547c"
+  "#ef476f", "#06d6a0", "#26547c", "#e8b33d", "#5e548e"
 ];
 
-function fmtL(n) {
+function fmtTick(n) {
   return "L. " + Number(n).toLocaleString("es-HN", { maximumFractionDigits: 0 });
 }
 
@@ -30,6 +30,55 @@ function destroyAll() {
   });
 }
 
+function txDate(t) {
+  return t.fecha?.toDate?.() || new Date(t.fecha);
+}
+
+// Ingresos y egresos totales por mes del año en curso
+function renderMonthly(transacciones) {
+  const ctx = document.getElementById("chart-monthly");
+  if (!ctx) return;
+  const year = new Date().getFullYear();
+  const title = document.getElementById("chart-monthly-title");
+  if (title) title.textContent = `Por mes (${year})`;
+
+  const labels = [];
+  for (let m = 0; m < 12; m++) {
+    labels.push(new Date(year, m, 1).toLocaleDateString("es-HN", { month: "short" }));
+  }
+  const ingresos = new Array(12).fill(0);
+  const egresos = new Array(12).fill(0);
+  transacciones.forEach(t => {
+    const f = txDate(t);
+    if (f.getFullYear() !== year) return;
+    if (t.tipo === "ingreso") ingresos[f.getMonth()] += Number(t.monto);
+    else egresos[f.getMonth()] += Number(t.monto);
+  });
+
+  if (charts.monthly) charts.monthly.destroy();
+  charts.monthly = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        { label: "Ingresos", data: ingresos, backgroundColor: "#0a8754", borderRadius: 5, maxBarThickness: 18 },
+        { label: "Egresos",  data: egresos,  backgroundColor: "#e63946", borderRadius: 5, maxBarThickness: 18 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "bottom", labels: { color: getTextColor(), boxWidth: 12 } },
+        tooltip: { callbacks: { label: c => `${c.dataset.label}: ${fmtTick(c.parsed.y)}` } }
+      },
+      scales: {
+        x: { ticks: { color: getTextColor(), font: { size: 10 } }, grid: { display: false } },
+        y: { ticks: { color: getTextColor(), callback: v => fmtTick(v) }, grid: { color: "rgba(127,127,127,0.12)" } }
+      }
+    }
+  });
+}
+
 function renderTrend(transacciones) {
   const ctx = document.getElementById("chart-trend");
   if (!ctx) return;
@@ -42,7 +91,7 @@ function renderTrend(transacciones) {
   const ingresos = months.map(() => 0);
   const egresos = months.map(() => 0);
   transacciones.forEach(t => {
-    const f = t.fecha?.toDate?.() || new Date(t.fecha);
+    const f = txDate(t);
     const idx = months.findIndex(m => m.y === f.getFullYear() && m.m === f.getMonth());
     if (idx === -1) return;
     if (t.tipo === "ingreso") ingresos[idx] += Number(t.monto);
@@ -64,7 +113,7 @@ function renderTrend(transacciones) {
       plugins: { legend: { position: "bottom", labels: { color: getTextColor() } } },
       scales: {
         x: { ticks: { color: getTextColor() }, grid: { display: false } },
-        y: { ticks: { color: getTextColor(), callback: v => fmtL(v) }, grid: { color: "rgba(127,127,127,0.12)" } }
+        y: { ticks: { color: getTextColor(), callback: v => fmtTick(v) }, grid: { color: "rgba(127,127,127,0.12)" } }
       }
     }
   });
@@ -90,38 +139,7 @@ function renderCategories(transacciones) {
       responsive: true, maintainAspectRatio: false, cutout: "60%",
       plugins: {
         legend: { position: "bottom", labels: { color: getTextColor(), boxWidth: 12 } },
-        tooltip: { callbacks: { label: c => `${c.label}: ${fmtL(c.parsed)}` } }
-      }
-    }
-  });
-}
-
-function renderPerson(transacciones) {
-  const ctx = document.getElementById("chart-person");
-  if (!ctx) return;
-  const buckets = { hector: { ing: 0, eg: 0 }, sonia: { ing: 0, eg: 0 } };
-  transacciones.forEach(t => {
-    const b = buckets[t.persona];
-    if (!b) return;
-    if (t.tipo === "ingreso") b.ing += Number(t.monto);
-    else b.eg += Number(t.monto);
-  });
-  if (charts.person) charts.person.destroy();
-  charts.person = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: ["Héctor", "Sonia"],
-      datasets: [
-        { label: "Ingresos", data: [buckets.hector.ing, buckets.sonia.ing], backgroundColor: "#0a8754", borderRadius: 8 },
-        { label: "Egresos",  data: [buckets.hector.eg,  buckets.sonia.eg],  backgroundColor: "#e63946", borderRadius: 8 }
-      ]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { position: "bottom", labels: { color: getTextColor() } } },
-      scales: {
-        x: { ticks: { color: getTextColor() }, grid: { display: false } },
-        y: { ticks: { color: getTextColor(), callback: v => fmtL(v) }, grid: { color: "rgba(127,127,127,0.12)" } }
+        tooltip: { callbacks: { label: c => `${c.label}: ${fmtTick(c.parsed)}` } }
       }
     }
   });
@@ -133,7 +151,7 @@ function renderAccounts(cuentas) {
   const positives = cuentas.filter(c => Number(c.saldoActual) > 0);
   if (charts.accounts) charts.accounts.destroy();
   if (positives.length === 0) return;
-  const labels = positives.map(c => `${c.nombre} (${c.propietario === "hector" ? "H" : "S"})`);
+  const labels = positives.map(c => window.UI.cuentaLabel(c, cuentas));
   charts.accounts = new Chart(ctx, {
     type: "polarArea",
     data: {
@@ -144,7 +162,7 @@ function renderAccounts(cuentas) {
       responsive: true, maintainAspectRatio: false,
       plugins: {
         legend: { position: "bottom", labels: { color: getTextColor(), boxWidth: 12 } },
-        tooltip: { callbacks: { label: c => `${c.label}: ${fmtL(c.parsed.r ?? c.parsed)}` } }
+        tooltip: { callbacks: { label: c => `${c.label}: ${fmtTick(c.parsed.r ?? c.parsed)}` } }
       },
       scales: {
         r: {
@@ -159,9 +177,9 @@ function renderAccounts(cuentas) {
 
 window.Charts = {
   renderAll(filteredTx, allTx, cuentas) {
+    renderMonthly(allTx);          // Barras del año en curso — siempre todo el año
     renderTrend(allTx);            // Trend siempre últimos 6 meses
     renderCategories(filteredTx);  // Categorías según filtro
-    renderPerson(filteredTx);
     renderAccounts(cuentas);
   },
   destroyAll
