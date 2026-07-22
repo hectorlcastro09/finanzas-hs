@@ -145,42 +145,54 @@ function renderCategories(transacciones) {
   });
 }
 
-function renderAccounts(cuentas) {
+// Ingresos y egresos acumulados por banco (según el filtro de período).
+// El historial migrado ya viene unificado (BAC de ambos = un solo BAC).
+function renderBancos(transacciones) {
   const ctx = document.getElementById("chart-accounts");
   if (!ctx) return;
-  const positives = cuentas.filter(c => Number(c.saldoActual) > 0);
-  if (charts.accounts) charts.accounts.destroy();
-  if (positives.length === 0) return;
-  const labels = positives.map(c => window.UI.cuentaLabel(c, cuentas));
+  const acc = {};
+  transacciones.forEach(t => {
+    const k = window.UI.bancoLabel(t.cuenta);
+    const o = (acc[k] = acc[k] || { ingresos: 0, egresos: 0 });
+    if (t.tipo === "ingreso") o.ingresos += Number(t.monto);
+    else o.egresos += Number(t.monto);
+  });
+  const entries = Object.entries(acc)
+    .sort((a, b) => (b[1].ingresos + b[1].egresos) - (a[1].ingresos + a[1].egresos))
+    .slice(0, 10);
+
+  if (charts.accounts) { charts.accounts.destroy(); charts.accounts = null; }
+  if (entries.length === 0) return;
   charts.accounts = new Chart(ctx, {
-    type: "polarArea",
+    type: "bar",
     data: {
-      labels,
-      datasets: [{ data: positives.map(c => Number(c.saldoActual)), backgroundColor: pickPalette(positives.length).map(c => c + "cc") }]
+      labels: entries.map(e => e[0]),
+      datasets: [
+        { label: "Ingresos", data: entries.map(e => e[1].ingresos), backgroundColor: "#0a8754", borderRadius: 4, maxBarThickness: 14 },
+        { label: "Egresos",  data: entries.map(e => e[1].egresos),  backgroundColor: "#e63946", borderRadius: 4, maxBarThickness: 14 }
+      ]
     },
     options: {
+      indexAxis: "y",
       responsive: true, maintainAspectRatio: false,
       plugins: {
         legend: { position: "bottom", labels: { color: getTextColor(), boxWidth: 12 } },
-        tooltip: { callbacks: { label: c => `${c.label}: ${fmtTick(c.parsed.r ?? c.parsed)}` } }
+        tooltip: { callbacks: { label: c => `${c.dataset.label}: ${fmtTick(c.parsed.x)}` } }
       },
       scales: {
-        r: {
-          ticks: { display: false },
-          grid: { color: "rgba(127,127,127,0.18)" },
-          angleLines: { color: "rgba(127,127,127,0.18)" }
-        }
+        x: { ticks: { color: getTextColor(), callback: v => fmtTick(v), font: { size: 10 } }, grid: { color: "rgba(127,127,127,0.12)" } },
+        y: { ticks: { color: getTextColor(), font: { size: 11 } }, grid: { display: false } }
       }
     }
   });
 }
 
 window.Charts = {
-  renderAll(filteredTx, allTx, cuentas) {
+  renderAll(filteredTx, allTx) {
     renderMonthly(allTx);          // Barras del año en curso — siempre todo el año
     renderTrend(allTx);            // Trend siempre últimos 6 meses
     renderCategories(filteredTx);  // Categorías según filtro
-    renderAccounts(cuentas);
+    renderBancos(filteredTx);      // Bancos según filtro
   },
   destroyAll
 };

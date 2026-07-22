@@ -150,10 +150,12 @@ async function deleteCuenta(id) {
 }
 
 // ---- Transacciones ----
+// El campo "cuenta" guarda el nombre del banco (catálogo fijo). Las
+// transacciones antiguas guardaban el id de un doc de "cuentas"; solo
+// esas llevaban saldo — los bancos son etiquetas y no tocan saldos.
 async function addTransaccion(tx) {
   const monto = Number(tx.monto);
   if (!monto || monto <= 0) throw new Error("Monto inválido");
-  if (!tx.cuenta) throw new Error("Selecciona una cuenta");
 
   // Convertir si es USD
   const moneda = tx.moneda || "HNL";
@@ -170,7 +172,7 @@ async function addTransaccion(tx) {
     categoria: tx.categoria || null,
     descripcion: tx.descripcion || "",
     metodoPago: tx.metodoPago || "transferencia",
-    cuenta: tx.cuenta,
+    cuenta: tx.cuenta || "Efectivo",
     fecha: firebase.firestore.Timestamp.fromDate(tx.fecha || new Date()),
     creadoPor: tx.persona,
     creadoEn: firebase.firestore.FieldValue.serverTimestamp()
@@ -180,12 +182,14 @@ async function addTransaccion(tx) {
   const txRef = hogarRef().collection("transacciones").doc();
   batch.set(txRef, data);
 
-  // Actualizar saldoActual de la cuenta
-  const ctaRef = hogarRef().collection("cuentas").doc(tx.cuenta);
-  const delta = tx.tipo === "ingreso" ? montoHNL : -montoHNL;
-  batch.update(ctaRef, {
-    saldoActual: firebase.firestore.FieldValue.increment(delta)
-  });
+  // Solo si apunta a una cuenta legacy real se ajusta su saldo
+  if (Store.cuentas.some(c => c.id === tx.cuenta)) {
+    const ctaRef = hogarRef().collection("cuentas").doc(tx.cuenta);
+    const delta = tx.tipo === "ingreso" ? montoHNL : -montoHNL;
+    batch.update(ctaRef, {
+      saldoActual: firebase.firestore.FieldValue.increment(delta)
+    });
+  }
 
   await batch.commit();
   return txRef.id;
@@ -196,9 +200,10 @@ async function deleteTransaccion(id) {
   if (!tx) return;
   const batch = window.FBase.db.batch();
   batch.delete(hogarRef().collection("transacciones").doc(id));
-  // Revertir el saldo
-  const delta = tx.tipo === "ingreso" ? -Number(tx.monto) : Number(tx.monto);
-  if (tx.cuenta) {
+  // Revertir saldo solo si era una cuenta legacy con doc real (un banco
+  // del catálogo no tiene doc y el update lo haría fallar todo)
+  if (tx.cuenta && Store.cuentas.some(c => c.id === tx.cuenta)) {
+    const delta = tx.tipo === "ingreso" ? -Number(tx.monto) : Number(tx.monto);
     batch.update(hogarRef().collection("cuentas").doc(tx.cuenta), {
       saldoActual: firebase.firestore.FieldValue.increment(delta)
     });

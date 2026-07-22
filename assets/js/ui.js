@@ -91,6 +91,16 @@ function cuentaLabel(cuenta, cuentas) {
   return cuenta.nombre;
 }
 
+// Valor del campo "cuenta" de una transacción → etiqueta visible.
+// Hoy se guarda el nombre del banco directo; red de seguridad para
+// registros que aún apunten al id de una cuenta legacy.
+function bancoLabel(valor) {
+  if (!valor) return "—";
+  const legacy = (window.Store?.cuentas || []).find(c => c.id === valor);
+  if (legacy) return cuentaLabel(legacy, window.Store.cuentas);
+  return valor;
+}
+
 // ---- Filtro por período ----
 function filterByPeriod(transacciones, period) {
   const now = new Date();
@@ -147,7 +157,7 @@ function initTheme() {
 Object.assign(UI, {
   toast, openModal, closeModal, closeAllModals, confirmModal,
   showView, fmtL, fmtLShort, fmtSigned, fmtDate, fmtShortDate,
-  cuentaLabel, filterByPeriod,
+  cuentaLabel, bancoLabel, filterByPeriod,
   getThemeMode, isDarkNow, applyTheme, initTheme
 });
 UI.state = UI;        // backward compat para UI.state.filters

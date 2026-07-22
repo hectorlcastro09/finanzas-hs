@@ -6,11 +6,13 @@ Reemplaza el Excel `Ingresos y egresos Héctor & Sonia.xlsx` con una experiencia
 
 ## Características
 
-- **Captura rápida**: al abrir la app solo hay dos botones — *Ingreso* y *Egreso* — monto, moneda y guardar. La descripción, el método de pago, la cuenta y la fecha son opcionales con valores recordados por teléfono.
+- **Captura rápida**: al abrir la app solo hay dos botones — *Ingreso* y *Egreso* — monto, moneda y guardar. La descripción, el método de pago, el banco y la fecha son opcionales con valores recordados por teléfono.
+- **Bancos de Honduras**: el selector de banco es un catálogo fijo (los 16 bancos CNBS + Efectivo) que vive en el código — siempre disponible, sin esperar la red — y es **compartido**: un solo "BAC Credomatic" para ambos.
+- **Notificaciones por correo** 📧: cuando un movimiento supera el umbral (L 1,000 por defecto, editable), les llega un correo a los dos. Ver [`docs/notificaciones.md`](docs/notificaciones.md).
 - **Dictado por voz** 🎤: el monto se puede dictar en español ("trescientos cincuenta", "veinte dólares" — detecta la moneda sola). También la descripción.
-- **Finanzas unificadas**: todo ingreso y egreso es del matrimonio; ya no se separa por persona (los registros históricos se conservan intactos).
+- **Finanzas unificadas**: todo ingreso y egreso es del matrimonio; ya no se separa por persona ni por dueño de cuenta (el historial se consolidó en los bancos unificados conservando montos, fechas y quién lo registró).
 - **Balance siempre visible**: chip en la esquina superior con el neto del mes y del año.
-- **Dashboard**: ingresos vs egresos por mes del año en curso, tendencia de 6 meses, egresos por categoría y saldo por cuenta.
+- **Dashboard**: ingresos vs egresos por mes del año en curso, tendencia de 6 meses, egresos por categoría e ingresos/egresos por banco (para saber en qué banco se mueve más el dinero).
 - **Fotos familiares de fondo**: rotan suavemente detrás de la app; **privadas** (viven en Firestore tras el login, no en este repositorio). Se administran en *Ajustes → Fotos de fondo*.
 - **Tema claro / oscuro / sistema** (sistema sigue el modo del teléfono: de día claro, de noche oscuro).
 - **Sincronización en tiempo real** entre teléfonos (Firebase Firestore) y **funciona offline** (incluida la sesión: solo el primer inicio en un dispositivo necesita internet).
@@ -56,13 +58,16 @@ finanzas-hs/
     ├── js/
     │   ├── firebase.js     # Config Firebase + auth (sin contraseña en código)
     │   ├── exchange.js     # Tasa USD/HNL
-    │   ├── store.js        # CRUD Firestore (transacciones, cuentas, categorías)
+    │   ├── store.js        # CRUD Firestore (transacciones, categorías)
     │   ├── charts.js       # Gráficos Chart.js
     │   ├── fondos.js       # Fotos de fondo: slideshow + administración
+    │   ├── notify.js       # Avisos por correo al superar el umbral
     │   ├── ui.js           # Navegación, modales, tema, helpers
     │   └── app.js          # Bootstrap, captura rápida, dictado por voz
     ├── img/                # Íconos Just Smile (any/maskable/apple) + logo login
     └── data/categorias.json# Catálogo semilla (solo primera vez)
+
+docs/notificaciones.md      # Guía del script de correo (sin claves)
 ```
 
 ## Modelo de datos (Firestore)
@@ -71,15 +76,14 @@ finanzas-hs/
 /hogar/principal/
   ├── transacciones/{id}    {tipo, persona ("hs"; legado: hector/sonia), monto (HNL),
   │                          montoOriginal, moneda, tasaCambio, categoria, descripcion,
-  │                          metodoPago, cuenta, fecha, creadoEn}
-  ├── cuentas/{id}          {propietario ("hs"; legado: hector/sonia), nombre,
-  │                          saldoInicial, saldoActual}
+  │                          metodoPago, cuenta (nombre del banco), fecha, creadoEn}
+  ├── cuentas/{id}          (archivo legado: ya no se usa ni se actualiza)
   ├── categorias/{id}       {nombre, grupo, esEgreso}
   ├── fondos/{id}           {data (JPEG data-URL ≤ ~500 KB), orden, creadoEn}
-  └── config/app            {tasaCambioActual, tasaCambioFecha, tasaCambioFuente}
+  └── config/app            {tasaCambio*, notifUrl, notifSecret, notifUmbral}
 ```
 
-Cada transacción actualiza el `saldoActual` de su cuenta en el mismo batch atómico. Los registros antiguos con `persona: hector|sonia` se conservan tal cual; la UI ya no separa por persona.
+El campo `cuenta` guarda el **nombre del banco** del catálogo fijo (el historial se migró una sola vez fusionando las cuentas por persona en su banco). Ya no se llevan saldos por cuenta: los totales salen de sumar ingresos y egresos. Los registros antiguos con `persona: hector|sonia` conservan ese campo y la lista lo muestra.
 
 ## Probar localmente
 

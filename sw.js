@@ -5,19 +5,20 @@
    ahora cargan con crossorigin y sí son cacheables).
    ============================================================= */
 
-const CACHE_VERSION = "finanzas-hs-v4";
+const CACHE_VERSION = "finanzas-hs-v5";
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./assets/css/style.css?v=2",
-  "./assets/js/firebase.js?v=2",
-  "./assets/js/exchange.js?v=2",
-  "./assets/js/store.js?v=2",
-  "./assets/js/charts.js?v=2",
-  "./assets/js/ui.js?v=2",
-  "./assets/js/fondos.js?v=2",
-  "./assets/js/app.js?v=2",
+  "./assets/css/style.css?v=3",
+  "./assets/js/firebase.js?v=3",
+  "./assets/js/exchange.js?v=3",
+  "./assets/js/store.js?v=3",
+  "./assets/js/charts.js?v=3",
+  "./assets/js/ui.js?v=3",
+  "./assets/js/fondos.js?v=3",
+  "./assets/js/notify.js?v=3",
+  "./assets/js/app.js?v=3",
   "./assets/data/categorias.json",
   "./assets/img/icon-any-192.png",
   "./assets/img/icon-any-512.png",

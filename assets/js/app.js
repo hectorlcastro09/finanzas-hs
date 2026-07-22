@@ -15,6 +15,30 @@
   const LS_CAT_EGRESO = "hs_last_cat_egreso";
   const LS_CAT_INGRESO = "hs_last_cat_ingreso";
 
+  // Catálogo fijo de bancos de Honduras — vive en el código para estar
+  // disponible al instante (sin depender de Firestore) y es compartido:
+  // un solo "BAC Credomatic" para ambos. "Efectivo" cubre lo que no
+  // pasa por banco.
+  const BANCOS = [
+    "Efectivo",
+    "BAC Credomatic",
+    "BANADESA",
+    "Banco Atlántida",
+    "Banco Azteca",
+    "Banco de Honduras",
+    "Banco de los Trabajadores",
+    "Banco de Occidente",
+    "Banco Popular",
+    "Banco Promerica",
+    "Banhcafé",
+    "Banpaís",
+    "Banrural",
+    "Davivienda",
+    "Ficensa",
+    "Ficohsa",
+    "Lafise"
+  ];
+
   let unsubscribe = null;
   let authBooted = false;
   const quick = { tipo: TIPO_EGRESO, cat: null, otra: false };
@@ -86,6 +110,7 @@
       console.warn("init:", e);
     }
     window.Store.startListeners();
+    window.Notify.init().then(renderNotifAjustes).catch(() => {});
     unsubscribe = window.Store.subscribe(renderAll);
     renderAll();
     UI.showView("inicio");
@@ -104,7 +129,7 @@
     renderChip();
     renderResumen();
     renderMovimientos();
-    renderCuentasAjustes();
+    renderNotifAjustes();
     renderTasaConfig();
   }
 
@@ -134,10 +159,12 @@
     const filtered = UI.filterByPeriod(window.Store.transacciones, period);
     const ingresos = filtered.filter(t => t.tipo === TIPO_INGRESO).reduce((a, t) => a + Number(t.monto), 0);
     const egresos = filtered.filter(t => t.tipo === TIPO_EGRESO).reduce((a, t) => a + Number(t.monto), 0);
-    const cashTotal = window.Store.cuentas.reduce((a, c) => a + Number(c.saldoActual || 0), 0);
+    const balance = ingresos - egresos;
     const profit = ingresos > 0 ? ((ingresos - egresos) / ingresos) * 100 : 0;
 
-    document.getElementById("kpi-cash").textContent = UI.fmtL(cashTotal);
+    // la tarjeta kpi-primary es verde con texto blanco (no colorear aquí)
+    const cashEl = document.getElementById("kpi-cash");
+    cashEl.textContent = (balance >= 0 ? "+" : "−") + UI.fmtL(Math.abs(balance));
     document.getElementById("kpi-income").textContent = UI.fmtL(ingresos);
     document.getElementById("kpi-expense").textContent = UI.fmtL(egresos);
 
@@ -147,7 +174,7 @@
     document.getElementById("kpi-profit-sub").textContent =
       profit >= 0 ? "beneficio del período" : "pérdida del período";
 
-    window.Charts.renderAll(filtered, window.Store.transacciones, window.Store.cuentas);
+    window.Charts.renderAll(filtered, window.Store.transacciones);
   }
 
   document.getElementById("filter-period").addEventListener("change", (e) => {
@@ -185,12 +212,11 @@
   }
 
   function renderTxItem(t) {
-    const cuenta = window.Store.cuentas.find(c => c.id === t.cuenta);
     const legacy = t.persona === "hector" ? "Héctor · " : t.persona === "sonia" ? "Sonia · " : "";
     const titulo = t.tipo === TIPO_INGRESO
       ? (t.descripcion || (t.categoria ? t.categoria : "Salario"))
       : (t.categoria || "Sin categoría");
-    const subt = `${legacy}${cuenta ? UI.cuentaLabel(cuenta, window.Store.cuentas) : "?"} · ${UI.fmtShortDate(t.fecha)}`;
+    const subt = `${legacy}${UI.bancoLabel(t.cuenta)} · ${UI.fmtShortDate(t.fecha)}`;
     const li = document.createElement("li");
     li.className = "tx-item";
     li.dataset.id = t.id;
@@ -227,7 +253,7 @@
   function promptDeleteTx(t) {
     UI.confirmModal(
       "Eliminar registro",
-      `¿Eliminar este ${t.tipo} de ${UI.fmtL(t.monto)}? El saldo de la cuenta se ajustará automáticamente.`,
+      `¿Eliminar este ${t.tipo} de ${UI.fmtL(t.monto)}? Desaparecerá del historial y de los totales.`,
       async () => {
         try {
           await window.Store.deleteTransaccion(t.id);
@@ -260,20 +286,19 @@
     const metodo = localStorage.getItem(LS_METODO);
     if (metodo) document.getElementById("q-metodo").value = metodo;
 
-    populateQuickCuentas();
+    populateQuickBancos();
     buildChips();
     UI.openModal("modal-quick");
     setTimeout(() => document.getElementById("q-monto").focus(), 120);
   }
 
-  function populateQuickCuentas() {
+  function populateQuickBancos() {
     const sel = document.getElementById("q-cuenta");
-    const cuentas = [...window.Store.cuentas].sort((a, b) => a.nombre.localeCompare(b.nombre));
-    sel.innerHTML = cuentas.length
-      ? cuentas.map(c => `<option value="${c.id}">${escapeHtml(UI.cuentaLabel(c, cuentas))}</option>`).join("")
-      : `<option value="">— sin cuentas; agrega una en Ajustes —</option>`;
+    sel.innerHTML = BANCOS
+      .map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`)
+      .join("");
     const last = localStorage.getItem(LS_CUENTA);
-    if (last && cuentas.some(c => c.id === last)) sel.value = last;
+    sel.value = BANCOS.includes(last) ? last : "Efectivo";
   }
 
   function topCategoriasEgreso() {
@@ -404,7 +429,6 @@
     const fechaStr = document.getElementById("q-fecha").value;
 
     if (!monto || monto <= 0) { UI.toast("Escribe el monto", "error"); return; }
-    if (!cuenta) { UI.toast("Agrega una cuenta en Ajustes primero", "error"); return; }
 
     let categoria = quick.cat;
     if (tipo === TIPO_EGRESO) {
@@ -435,6 +459,17 @@
         tipo, persona: "hs", monto, moneda,
         categoria, descripcion, metodoPago, cuenta, fecha
       });
+
+      // aviso por correo si supera el umbral (no bloquea el guardado)
+      const tasaNow = window.Exchange.current.rate;
+      window.Notify.maybeSend({
+        tipo,
+        monto: moneda === "USD" ? monto * tasaNow : monto,
+        moneda,
+        montoOriginal: monto,
+        categoria, descripcion, metodoPago, cuenta, fecha
+      });
+
       // recordar preferencias de este teléfono
       localStorage.setItem(LS_CUENTA, cuenta);
       localStorage.setItem(LS_METODO, metodoPago);
@@ -510,94 +545,35 @@
     }));
   }
 
-  // ============ Cuentas (en Ajustes) ============
-  function renderCuentasAjustes() {
-    const cuentas = window.Store.cuentas;
-    const total = cuentas.reduce((a, c) => a + Number(c.saldoActual || 0), 0);
-    document.getElementById("ajustes-total").textContent = UI.fmtL(total);
+  // ============ Notificaciones por correo (en Ajustes) ============
+  function renderNotifAjustes() {
+    const badge = document.getElementById("notif-estado");
+    if (!badge || !window.Notify) return;
+    const est = window.Notify.estado();
+    badge.textContent = est.configurado ? "✓ Activas" : "Sin configurar";
+    badge.className = "notif-badge " + (est.configurado ? "ok" : "off");
 
-    const ul = document.getElementById("lista-cuentas");
-    ul.innerHTML = "";
-    if (cuentas.length === 0) {
-      ul.innerHTML = `<li class="muted small">Sin cuentas. Agrega una.</li>`;
+    const umbral = document.getElementById("notif-umbral");
+    if (umbral && document.activeElement !== umbral) umbral.value = est.umbral;
+    const url = document.getElementById("notif-url");
+    if (url && document.activeElement !== url) url.value = est.url || "";
+  }
+
+  document.getElementById("btn-notif-save").addEventListener("click", async () => {
+    const umbral = parseFloat(document.getElementById("notif-umbral").value);
+    const url = document.getElementById("notif-url").value.trim();
+    const clave = document.getElementById("notif-clave").value.trim();
+    if (!umbral || umbral <= 0) { UI.toast("Umbral inválido", "error"); return; }
+    if (url && !/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) {
+      UI.toast("La URL debe ser la del script de Google (termina en /exec)", "error");
       return;
     }
-    [...cuentas].sort((a, b) => a.nombre.localeCompare(b.nombre)).forEach(c => {
-      const li = document.createElement("li");
-      li.className = "account-item";
-      li.innerHTML = `
-        <span class="acc-name">${escapeHtml(UI.cuentaLabel(c, cuentas))}</span>
-        <span class="acc-saldo">${UI.fmtL(c.saldoActual)}</span>
-        <button class="acc-edit" data-id="${c.id}" title="Editar">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
-        </button>
-      `;
-      li.querySelector(".acc-edit").addEventListener("click", () => openCuentaModal(c));
-      ul.appendChild(li);
-    });
-  }
-
-  document.getElementById("btn-add-account").addEventListener("click", () => openCuentaModal(null));
-
-  function openCuentaModal(cuenta) {
-    const form = document.getElementById("form-cuenta");
-    form.reset();
-    document.getElementById("cuenta-id").value = cuenta?.id || "";
-    document.getElementById("modal-cuenta-title").textContent = cuenta ? "Editar cuenta" : "Nueva cuenta";
-    document.getElementById("cuenta-nombre").value = cuenta?.nombre || "";
-    document.getElementById("cuenta-saldo").value = cuenta ? Number(cuenta.saldoInicial || 0).toFixed(2) : "0.00";
-    document.getElementById("btn-cuenta-delete").hidden = !cuenta;
-    UI.openModal("modal-cuenta");
-  }
-
-  document.getElementById("form-cuenta").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const id = document.getElementById("cuenta-id").value;
-    const nombre = document.getElementById("cuenta-nombre").value.trim();
-    const saldo = parseFloat(document.getElementById("cuenta-saldo").value) || 0;
-    if (!nombre) { UI.toast("Nombre requerido", "error"); return; }
-
     try {
-      if (id) {
-        const cuenta = window.Store.cuentas.find(c => c.id === id);
-        if (cuenta && Number(cuenta.saldoInicial) !== saldo) {
-          UI.confirmModal(
-            "¿Ajustar saldo inicial?",
-            `Vas a cambiar el saldo inicial de "${nombre}" a ${UI.fmtL(saldo)}. El saldo actual se recalculará considerando todos los ingresos y egresos. ¿Continuar?`,
-            async () => {
-              await window.Store.updateCuenta(id, { nombre });
-              await window.Store.setSaldoInicial(id, saldo);
-              UI.closeModal("modal-cuenta");
-              UI.toast("Cuenta actualizada", "success");
-            }
-          );
-        } else {
-          await window.Store.updateCuenta(id, { nombre });
-          UI.closeModal("modal-cuenta");
-          UI.toast("Cuenta actualizada", "success");
-        }
-      } else {
-        await window.Store.addCuenta({ nombre, saldoInicial: saldo });
-        UI.closeModal("modal-cuenta");
-        UI.toast("Cuenta creada", "success");
-      }
-    } catch (err) {
-      UI.toast("Error: " + err.message, "error");
-    }
-  });
-
-  document.getElementById("btn-cuenta-delete").addEventListener("click", () => {
-    const id = document.getElementById("cuenta-id").value;
-    if (!id) return;
-    UI.confirmModal(
-      "Eliminar cuenta",
-      "¿Eliminar esta cuenta? Las transacciones existentes no se borrarán, pero quedarán sin cuenta asociada.",
-      async () => {
-        await window.Store.deleteCuenta(id);
-        UI.closeModal("modal-cuenta");
-        UI.toast("Cuenta eliminada", "success");
-      }
-    );
+      await window.Notify.saveConfig({ umbral, url, clave });
+      document.getElementById("notif-clave").value = "";
+      renderNotifAjustes();
+      UI.toast("Notificaciones guardadas ✓", "success");
+    } catch (e) { UI.toast("Error: " + e.message, "error"); }
   });
 
   // ============ Tema ============

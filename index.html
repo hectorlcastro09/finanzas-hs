@@ -18,7 +18,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="assets/css/style.css?v=2" />
+  <link rel="stylesheet" href="assets/css/style.css?v=3" />
 </head>
 <body>
 
@@ -116,9 +116,9 @@
 
       <div class="kpi-grid">
         <div class="kpi-card kpi-primary">
-          <div class="kpi-label">Efectivo disponible</div>
+          <div class="kpi-label">Balance del período</div>
           <div class="kpi-value" id="kpi-cash">L. 0.00</div>
-          <div class="kpi-sub" id="kpi-cash-sub">Total caja + bancos</div>
+          <div class="kpi-sub" id="kpi-cash-sub">ingresos − egresos</div>
         </div>
         <div class="kpi-card kpi-income">
           <div class="kpi-label">Ingresos</div>
@@ -151,7 +151,7 @@
           <canvas id="chart-categories"></canvas>
         </div>
         <div class="chart-card">
-          <h3>Por cuenta</h3>
+          <h3>Ingresos y egresos por banco</h3>
           <canvas id="chart-accounts"></canvas>
         </div>
       </div>
@@ -197,10 +197,22 @@
       </div>
 
       <div class="card">
-        <h3>Cuentas</h3>
-        <p class="muted">Total de activos: <strong id="ajustes-total">L. 0.00</strong></p>
-        <ul class="account-list" id="lista-cuentas"></ul>
-        <button class="btn btn-outline btn-block" id="btn-add-account">+ Agregar cuenta</button>
+        <h3>Notificaciones por correo</h3>
+        <p class="muted">Cuando un ingreso o egreso supere el umbral, les llega un correo a ambos. <span id="notif-estado" class="notif-badge off">Sin configurar</span></p>
+        <label>Umbral (L.)
+          <input type="number" step="1" min="1" id="notif-umbral" placeholder="1000" inputmode="numeric" />
+        </label>
+        <details class="notif-detalles">
+          <summary>Conexión con el script de Google</summary>
+          <label>URL del script (termina en /exec)
+            <input type="url" id="notif-url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off" />
+          </label>
+          <label>Clave secreta
+            <input type="password" id="notif-clave" placeholder="(sin cambios)" autocomplete="off" />
+          </label>
+          <p class="muted small">La guía para crear el script está en docs/notificaciones.md del repositorio. Dejar la URL vacía desactiva los avisos.</p>
+        </details>
+        <button class="btn btn-primary btn-block" id="btn-notif-save">Guardar notificaciones</button>
       </div>
 
       <div class="card">
@@ -335,7 +347,7 @@
       </div>
 
       <div class="q-section">
-        <label>Cuenta
+        <label>Banco
           <select id="q-cuenta" required></select>
         </label>
       </div>
@@ -363,38 +375,6 @@
       </details>
 
       <button type="submit" class="btn btn-primary btn-block btn-lg" id="q-guardar">Guardar</button>
-    </form>
-  </div>
-</div>
-
-<!-- ========== Modal: Cuenta ========== -->
-<div id="modal-cuenta" class="modal hidden">
-  <div class="modal-backdrop" data-close-modal></div>
-  <div class="modal-content">
-    <header class="modal-header">
-      <h3 id="modal-cuenta-title">Cuenta</h3>
-      <button class="btn-icon" data-close-modal aria-label="Cerrar">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-      </button>
-    </header>
-    <form id="form-cuenta" class="modal-body">
-      <input type="hidden" id="cuenta-id" />
-
-      <label>Nombre
-        <input type="text" id="cuenta-nombre" required placeholder="Ej. BAC" />
-      </label>
-
-      <label>Saldo inicial (L.)
-        <input type="number" step="0.01" id="cuenta-saldo" required placeholder="0.00" />
-      </label>
-
-      <p class="muted small" id="cuenta-hint">El saldo se ajustará automáticamente con ingresos y egresos.</p>
-
-      <div class="row-buttons">
-        <button type="button" class="btn btn-danger" id="btn-cuenta-delete" hidden>Eliminar</button>
-        <button type="button" class="btn btn-outline" data-close-modal>Cancelar</button>
-        <button type="submit" class="btn btn-primary">Guardar</button>
-      </div>
     </form>
   </div>
 </div>
@@ -429,12 +409,13 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
 
 <!-- App scripts -->
-<script src="assets/js/firebase.js?v=2"></script>
-<script src="assets/js/exchange.js?v=2"></script>
-<script src="assets/js/store.js?v=2"></script>
-<script src="assets/js/charts.js?v=2"></script>
-<script src="assets/js/ui.js?v=2"></script>
-<script src="assets/js/fondos.js?v=2"></script>
-<script src="assets/js/app.js?v=2"></script>
+<script src="assets/js/firebase.js?v=3"></script>
+<script src="assets/js/exchange.js?v=3"></script>
+<script src="assets/js/store.js?v=3"></script>
+<script src="assets/js/charts.js?v=3"></script>
+<script src="assets/js/ui.js?v=3"></script>
+<script src="assets/js/fondos.js?v=3"></script>
+<script src="assets/js/notify.js?v=3"></script>
+<script src="assets/js/app.js?v=3"></script>
 </body>
 </html>

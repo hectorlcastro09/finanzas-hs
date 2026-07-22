@@ -780,35 +780,26 @@ label > .input-mic {
 .tx-amount.ingreso { color: var(--color-income); }
 .tx-amount.egreso { color: var(--color-expense); }
 
-/* ============ Cuentas (Ajustes) ============ */
-.account-list {
-  list-style: none;
-  padding: 0;
-  margin: 8px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+/* ============ Notificaciones (Ajustes) ============ */
+.notif-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  vertical-align: middle;
+  white-space: nowrap;
 }
-.account-item {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 10px;
-  align-items: center;
-  padding: 10px 12px;
-  background: var(--surface-alt);
-  border-radius: var(--radius-sm);
-}
-.account-item .acc-name { font-weight: 600; }
-.account-item .acc-saldo { font-weight: 700; font-variant-numeric: tabular-nums; }
-.account-item .acc-edit {
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
+.notif-badge.ok { background: rgba(10, 135, 84, 0.16); color: var(--color-income); }
+.notif-badge.off { background: rgba(127, 127, 127, 0.16); color: var(--text-muted); }
+.notif-detalles { margin: 10px 0 12px; }
+.notif-detalles summary {
   cursor: pointer;
-  padding: 4px;
-  border-radius: 6px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  padding: 4px 0;
 }
-.account-item .acc-edit:hover { background: var(--border); color: var(--text); }
+.notif-detalles label { display: block; margin-top: 10px; }
 
 /* ============ Fotos de fondo (Ajustes) ============ */
 .fondos-grid {
