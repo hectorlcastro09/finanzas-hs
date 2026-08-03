@@ -2,7 +2,8 @@
 
 Cuando un ingreso o egreso supera el umbral (L 1,000 por defecto), la app
 envía el aviso a un **Google Apps Script** desplegado en la cuenta de Gmail
-de la familia, y el script manda el correo a ambos con `MailApp`.
+de la familia, y el script manda el correo a ambos con `MailApp`. Por el
+mismo canal salen las **alarmas de presupuesto mensual** (ver abajo).
 
 - **Gratis** (no requiere plan Blaze de Firebase ni servicios de terceros).
 - La **URL del script y la clave secreta NO están en este repositorio**:
@@ -28,6 +29,40 @@ function doPost(e) {
     const p = JSON.parse(e.postData.contents);
     if (!p || p.secreto !== SECRETO) {
       out.setContent(JSON.stringify({ ok: false, error: "clave inválida" }));
+      return out;
+    }
+
+    // ---- Alarmas de presupuesto mensual ----
+    if (p.evento === "presupuesto") {
+      const fmtL = function (n) {
+        return "L " + Number(n).toLocaleString("es-HN", {
+          minimumFractionDigits: 2, maximumFractionDigits: 2
+        });
+      };
+      const excedido = Number(p.restante) < 0;
+      const asunto = excedido
+        ? "🚨 Presupuesto excedido por " + fmtL(-p.restante) + " — Finanzas H&S"
+        : "⚠️ Presupuesto: quedan " + fmtL(p.restante) + " este mes — Finanzas H&S";
+      const pct = Number(p.presupuesto) > 0
+        ? Math.round((Number(p.gastado) / Number(p.presupuesto)) * 100) : 0;
+
+      const lineas = [
+        "AVISO DE PRESUPUESTO — " + (p.mesLabel || ""),
+        "",
+        excedido
+          ? "Ya se excedió el presupuesto del mes por " + fmtL(-p.restante) + "."
+          : "Solo les quedan " + fmtL(p.restante) + " para gastar este mes.",
+        "Gastado: " + fmtL(p.gastado) + " de " + fmtL(p.presupuesto) + " (" + pct + "%)"
+      ];
+      if (p.ultimo && p.ultimo.monto) {
+        lineas.push("", "Último egreso: " + fmtL(p.ultimo.monto) +
+          (p.ultimo.categoria ? " — " + p.ultimo.categoria : "") +
+          (p.ultimo.banco ? " (" + p.ultimo.banco + ")" : ""));
+      }
+      lineas.push("", "— Finanzas H&S");
+
+      MailApp.sendEmail(DESTINOS, asunto, lineas.join("\n"));
+      out.setContent(JSON.stringify({ ok: true }));
       return out;
     }
 
@@ -75,11 +110,30 @@ function doPost(e) {
    script de Google* → pegar URL y clave → **Guardar**. Con guardarlo en
    un teléfono basta: queda en Firestore para ambos.
 
+## Alarmas de presupuesto mensual
+
+La app lleva un **presupuesto mensual de egresos** (L 100,000 por defecto,
+editable en *Ajustes → Notificaciones*; vacío o 0 lo apaga). Cuando queda
+poco por gastar envía correos a ambos, con una escalera **en porcentaje
+del presupuesto restante**: 20% → 10% → 5% → 4% → 3% → 2% → 1%.
+
+- Cada umbral avisa **una sola vez por mes calendario**; el control vive
+  en Firestore (`config/alertas`: `{ mes, enviadas: [20, 10, …] }`) y se
+  re-arma solo el día 1. Un egreso grande que cruce varios umbrales de
+  golpe manda **un solo correo** con el restante real.
+- Además, al quedar ≤ 20% aparece un contador en la parte superior de la
+  app ("Quedan L X para gastar este mes"), que pasa a rojo al 5% y avisa
+  si el presupuesto se excede.
+- El chequeo corre en el teléfono que registra el egreso; sin conexión,
+  el correo se encola igual que los avisos por movimiento.
+
 ## Notas
 
 - La app solo avisa al **crear** un registro (no al eliminar ni al
   importar respaldos). Si el teléfono está sin conexión, el aviso se
   encola y sale al volver la red.
 - Para cambiar el umbral: *Ajustes → Notificaciones por correo → Umbral*.
-- Si se vuelve a desplegar el script (URL nueva), hay que actualizar la
-  URL en Ajustes.
+- Para actualizar el **código** del script sin cambiar la URL:
+  *Implementar → Administrar implementaciones → ✏️ → Versión: Nueva
+  versión → Implementar*. Solo una **implementación nueva** genera otra
+  URL (y habría que actualizarla en Ajustes).

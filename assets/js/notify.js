@@ -80,6 +80,14 @@
     send(payload).catch(() => enqueue(payload));
   }
 
+  // Envío genérico por el mismo transporte (y la misma cola offline).
+  // Lo usa presupuesto.js para las alarmas de presupuesto.
+  function sendCustom(data) {
+    if (!Notify.url || !Notify.secret) return;
+    const payload = Object.assign({ secreto: Notify.secret }, data);
+    send(payload).catch(() => enqueue(payload));
+  }
+
   async function send(payload) {
     // text/plain evita el preflight CORS; Apps Script responde con
     // Access-Control-Allow-Origin: * y se puede confirmar la entrega.
@@ -118,6 +126,6 @@
     Notify._flushing = false;
   }
 
-  Object.assign(Notify, { init, saveConfig, maybeSend, flush, estado });
+  Object.assign(Notify, { init, saveConfig, maybeSend, sendCustom, flush, estado });
   window.Notify = Notify;
 })();

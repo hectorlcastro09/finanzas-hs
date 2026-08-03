@@ -18,7 +18,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="assets/css/style.css?v=3" />
+  <link rel="stylesheet" href="assets/css/style.css?v=4" />
 </head>
 <body>
 
@@ -62,17 +62,21 @@
 <!-- ========== App ========== -->
 <div id="app" class="app hidden">
   <header class="app-header">
-    <div class="brand">
-      <img src="assets/img/login-logo.png" alt="" class="brand-logo" />
-      <span class="brand-text">Finanzas H&amp;S</span>
+    <div class="app-header-row">
+      <div class="brand">
+        <img src="assets/img/login-logo.png" alt="" class="brand-logo" />
+        <span class="brand-text">Finanzas H&amp;S</span>
+      </div>
+      <div class="header-actions">
+        <span id="connection-status" class="conn-dot" title="Estado de conexión"></span>
+        <button id="chip-balance" class="chip-balance" title="Balance del mes y del año">
+          <span id="chip-mes">—</span>
+          <span id="chip-anio">—</span>
+        </button>
+      </div>
     </div>
-    <div class="header-actions">
-      <span id="connection-status" class="conn-dot" title="Estado de conexión"></span>
-      <button id="chip-balance" class="chip-balance" title="Balance del mes y del año">
-        <span id="chip-mes">—</span>
-        <span id="chip-anio">—</span>
-      </button>
-    </div>
+    <!-- Contador de presupuesto: aparece al quedar ≤ 20% del presupuesto del mes -->
+    <button id="budget-bar" class="budget-bar hidden" type="button" title="Presupuesto del mes"></button>
   </header>
 
   <main class="app-main">
@@ -202,6 +206,10 @@
         <label>Umbral (L.)
           <input type="number" step="1" min="1" id="notif-umbral" placeholder="1000" inputmode="numeric" />
         </label>
+        <label>Presupuesto mensual de egresos (L.)
+          <input type="number" step="1" min="0" id="presu-mensual" placeholder="100000" inputmode="numeric" />
+        </label>
+        <p class="muted small">Avisos por correo cuando quede el 20%, 10%, 5%, 4%, 3%, 2% y 1% del presupuesto (cada uno una vez por mes), y contador en la parte superior de la app. Vacío o 0 = apagado.</p>
         <details class="notif-detalles">
           <summary>Conexión con el script de Google</summary>
           <label>URL del script (termina en /exec)
@@ -275,7 +283,7 @@
 
       <div class="card">
         <h3>Acerca de</h3>
-        <p class="muted small">Finanzas H&amp;S · PWA · v2.0</p>
+        <p class="muted small">Finanzas H&amp;S · PWA · v2.2</p>
         <p class="muted small">Hecha con amor para Héctor, Sonia y Elízabeth.</p>
       </div>
     </section>
@@ -409,13 +417,14 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
 
 <!-- App scripts -->
-<script src="assets/js/firebase.js?v=3"></script>
-<script src="assets/js/exchange.js?v=3"></script>
-<script src="assets/js/store.js?v=3"></script>
-<script src="assets/js/charts.js?v=3"></script>
-<script src="assets/js/ui.js?v=3"></script>
-<script src="assets/js/fondos.js?v=3"></script>
-<script src="assets/js/notify.js?v=3"></script>
-<script src="assets/js/app.js?v=3"></script>
+<script src="assets/js/firebase.js?v=4"></script>
+<script src="assets/js/exchange.js?v=4"></script>
+<script src="assets/js/store.js?v=4"></script>
+<script src="assets/js/charts.js?v=4"></script>
+<script src="assets/js/ui.js?v=4"></script>
+<script src="assets/js/fondos.js?v=4"></script>
+<script src="assets/js/notify.js?v=4"></script>
+<script src="assets/js/presupuesto.js?v=4"></script>
+<script src="assets/js/app.js?v=4"></script>
 </body>
 </html>

@@ -9,6 +9,7 @@ Reemplaza el Excel `Ingresos y egresos Héctor & Sonia.xlsx` con una experiencia
 - **Captura rápida**: al abrir la app solo hay dos botones — *Ingreso* y *Egreso* — monto, moneda y guardar. La descripción, el método de pago, el banco y la fecha son opcionales con valores recordados por teléfono.
 - **Bancos de Honduras**: el selector de banco es un catálogo fijo (los 16 bancos CNBS + Efectivo) que vive en el código — siempre disponible, sin esperar la red — y es **compartido**: un solo "BAC Credomatic" para ambos.
 - **Notificaciones por correo** 📧: cuando un movimiento supera el umbral (L 1,000 por defecto, editable), les llega un correo a los dos. Ver [`docs/notificaciones.md`](docs/notificaciones.md).
+- **Presupuesto mensual con alarmas** ⚠️: presupuesto de egresos del mes (L 100,000 por defecto, editable en Ajustes). Al quedar el 20% aparece un contador en la parte superior con lo que falta por gastar, y llegan correos a ambos cuando queda el 20%, 10%, 5%, 4%, 3%, 2% y 1% del presupuesto (cada aviso una sola vez por mes; también avisa si se excede).
 - **Dictado por voz** 🎤: el monto se puede dictar en español ("trescientos cincuenta", "veinte dólares" — detecta la moneda sola). También la descripción.
 - **Finanzas unificadas**: todo ingreso y egreso es del matrimonio; ya no se separa por persona ni por dueño de cuenta (el historial se consolidó en los bancos unificados conservando montos, fechas y quién lo registró).
 - **Balance siempre visible**: chip en la esquina superior con el neto del mes y del año.
@@ -62,6 +63,7 @@ finanzas-hs/
     │   ├── charts.js       # Gráficos Chart.js
     │   ├── fondos.js       # Fotos de fondo: slideshow + administración
     │   ├── notify.js       # Avisos por correo al superar el umbral
+    │   ├── presupuesto.js  # Presupuesto mensual: contador + alarmas escalonadas
     │   ├── ui.js           # Navegación, modales, tema, helpers
     │   └── app.js          # Bootstrap, captura rápida, dictado por voz
     ├── img/                # Íconos Just Smile (any/maskable/apple) + logo login
@@ -80,10 +82,15 @@ docs/notificaciones.md      # Guía del script de correo (sin claves)
   ├── cuentas/{id}          (archivo legado: ya no se usa ni se actualiza)
   ├── categorias/{id}       {nombre, grupo, esEgreso}
   ├── fondos/{id}           {data (JPEG data-URL ≤ ~500 KB), orden, creadoEn}
-  └── config/app            {tasaCambio*, notifUrl, notifSecret, notifUmbral}
+  ├── config/app            {tasaCambio*, notifUrl, notifSecret, notifUmbral,
+  │                          presupuestoMensual}
+  └── config/alertas        {mes: "2026-08", enviadas: [20, 10, …]}
+                            ← umbrales (%) de presupuesto ya avisados en el mes
 ```
 
 El campo `cuenta` guarda el **nombre del banco** del catálogo fijo (el historial se migró una sola vez fusionando las cuentas por persona en su banco). Ya no se llevan saldos por cuenta: los totales salen de sumar ingresos y egresos. Los registros antiguos con `persona: hector|sonia` conservan ese campo y la lista lo muestra.
+
+Notas del presupuesto: el respaldo JSON **no incluye** la configuración ni el estado de alarmas (`config/*`) — es estado efímero que se re-arma cada mes. Un cambio de presupuesto o umbral hecho en un teléfono se ve en el otro al **recargar** la app (la configuración se lee al arrancar).
 
 ## Probar localmente
 

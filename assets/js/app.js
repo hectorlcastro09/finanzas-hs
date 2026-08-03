@@ -111,6 +111,7 @@
     }
     window.Store.startListeners();
     window.Notify.init().then(renderNotifAjustes).catch(() => {});
+    window.Presupuesto.init().then(renderAll).catch(() => {});
     unsubscribe = window.Store.subscribe(renderAll);
     renderAll();
     UI.showView("inicio");
@@ -127,6 +128,7 @@
   // ============ Render principal ============
   function renderAll() {
     renderChip();
+    renderPresupuesto();
     renderResumen();
     renderMovimientos();
     renderNotifAjustes();
@@ -151,6 +153,24 @@
     mesEl.classList.toggle("pos", mes >= 0);
     mesEl.classList.toggle("neg", mes < 0);
     anioEl.textContent = `${now.getFullYear()} ${UI.fmtSigned(anio)}`;
+  }
+
+  // ============ Banda de presupuesto (segunda fila del header) ============
+  function renderPresupuesto() {
+    const bar = document.getElementById("budget-bar");
+    if (!bar || !window.Presupuesto) return;
+    const est = window.Presupuesto.estado();
+    const visible = est.activo && est.restante <= est.maxUmbral;
+    bar.classList.toggle("hidden", !visible);
+    document.body.classList.toggle("has-budget", visible);
+    if (!visible) return;
+    const cincoPct = est.presupuesto * 0.05;
+    bar.classList.toggle("warn", est.restante > cincoPct);
+    bar.classList.toggle("danger", est.restante <= cincoPct && est.restante >= 0);
+    bar.classList.toggle("over", est.restante < 0);
+    bar.textContent = est.restante < 0
+      ? "Presupuesto excedido por " + UI.fmtLShort(-est.restante)
+      : "Quedan " + UI.fmtLShort(est.restante) + " para gastar este mes";
   }
 
   // ============ Resumen ============
@@ -455,7 +475,7 @@
     const fecha = fechaStr ? new Date(fechaStr + "T12:00:00") : new Date();
 
     try {
-      await window.Store.addTransaccion({
+      const txId = await window.Store.addTransaccion({
         tipo, persona: "hs", monto, moneda,
         categoria, descripcion, metodoPago, cuenta, fecha
       });
@@ -469,6 +489,15 @@
         montoOriginal: monto,
         categoria, descripcion, metodoPago, cuenta, fecha
       });
+
+      // alarmas de presupuesto mensual (solo en el teléfono que crea el egreso)
+      if (tipo === TIPO_EGRESO) {
+        window.Presupuesto.onEgresoCreado({
+          id: txId,
+          montoHNL: moneda === "USD" ? monto * tasaNow : monto,
+          fecha, categoria, cuenta
+        });
+      }
 
       // recordar preferencias de este teléfono
       localStorage.setItem(LS_CUENTA, cuenta);
@@ -557,6 +586,11 @@
     if (umbral && document.activeElement !== umbral) umbral.value = est.umbral;
     const url = document.getElementById("notif-url");
     if (url && document.activeElement !== url) url.value = est.url || "";
+
+    const presu = document.getElementById("presu-mensual");
+    if (presu && window.Presupuesto && document.activeElement !== presu) {
+      presu.value = window.Presupuesto.mensual || "";
+    }
   }
 
   document.getElementById("btn-notif-save").addEventListener("click", async () => {
@@ -568,10 +602,15 @@
       UI.toast("La URL debe ser la del script de Google (termina en /exec)", "error");
       return;
     }
+    const presuRaw = document.getElementById("presu-mensual").value.trim();
+    const presu = presuRaw === "" ? 0 : parseFloat(presuRaw);
+    if (isNaN(presu) || presu < 0) { UI.toast("Presupuesto inválido", "error"); return; }
     try {
       await window.Notify.saveConfig({ umbral, url, clave });
+      await window.Presupuesto.saveConfig(presu);
       document.getElementById("notif-clave").value = "";
       renderNotifAjustes();
+      renderPresupuesto();
       UI.toast("Notificaciones guardadas ✓", "success");
     } catch (e) { UI.toast("Error: " + e.message, "error"); }
   });
@@ -695,6 +734,10 @@
       el.addEventListener("click", () => UI.closeAllModals());
     });
     document.getElementById("chip-balance").addEventListener("click", () => UI.showView("resumen"));
+    document.getElementById("budget-bar").addEventListener("click", () => {
+      const est = window.Presupuesto.estado();
+      UI.toast(`Gastado ${UI.fmtL(est.gastado)} de ${UI.fmtL(est.presupuesto)} este mes`);
+    });
   }
 
   function updateConnectionStatus() {
