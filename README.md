@@ -10,6 +10,7 @@ Reemplaza el Excel `Ingresos y egresos Héctor & Sonia.xlsx` con una experiencia
 - **Bancos de Honduras**: el selector de banco es un catálogo fijo (los 16 bancos CNBS + Efectivo) que vive en el código — siempre disponible, sin esperar la red — y es **compartido**: un solo "BAC Credomatic" para ambos.
 - **Notificaciones por correo** 📧: cuando un movimiento supera el umbral (L 1,000 por defecto, editable), les llega un correo a los dos. Ver [`docs/notificaciones.md`](docs/notificaciones.md).
 - **Presupuesto mensual con alarmas** ⚠️: presupuesto de egresos del mes (L 100,000 por defecto, editable en Ajustes). Al quedar el 20% aparece un contador en la parte superior con lo que falta por gastar, y llegan correos a ambos cuando queda el 20%, 10%, 5%, 4%, 3%, 2% y 1% del presupuesto (cada aviso una sola vez por mes; también avisa si se excede).
+- **Reporte mensual en Google Sheet** 📊: el día 1 de cada mes llega a ambos un correo con el resumen del mes que cerró y el enlace a un Google Sheet con el detalle completo (categoría, monto, descripción, banco…), guardado en la carpeta de Drive "Finanzas H&S — Reportes". No vive en la app sino en el mismo Apps Script de las notificaciones — ver [`docs/notificaciones.md`](docs/notificaciones.md).
 - **Dictado por voz** 🎤: el monto se puede dictar en español ("trescientos cincuenta", "veinte dólares" — detecta la moneda sola). También la descripción.
 - **Finanzas unificadas**: todo ingreso y egreso es del matrimonio; ya no se separa por persona ni por dueño de cuenta (el historial se consolidó en los bancos unificados conservando montos, fechas y quién lo registró).
 - **Balance siempre visible**: chip en la esquina superior con el neto del mes y del año.
@@ -70,6 +71,7 @@ finanzas-hs/
     └── data/categorias.json# Catálogo semilla (solo primera vez)
 
 docs/notificaciones.md      # Guía del script de correo (sin claves)
+docs/reporte-mensual.gs     # Plantilla del reporte mensual (Apps Script)
 ```
 
 ## Modelo de datos (Firestore)

@@ -127,6 +127,39 @@ del presupuesto restante**: 20% → 10% → 5% → 4% → 3% → 2% → 1%.
 - El chequeo corre en el teléfono que registra el egreso; sin conexión,
   el correo se encola igual que los avisos por movimiento.
 
+## Reporte mensual en Google Sheet
+
+El **día 1 de cada mes por la mañana (7–8 am)** llega a ambos correos un
+resumen del **mes que acaba de cerrar** con el enlace a un **Google
+Sheet** (pestañas *Resumen* y *Detalle*: fecha, tipo, categoría,
+descripción, banco, método y monto de cada movimiento). Los Sheets
+quedan en la carpeta de Drive **"Finanzas H&S — Reportes"** (compartida
+como lectura con el segundo correo).
+
+Vive en el **mismo proyecto de Apps Script**, en un archivo aparte
+(`Reporte.gs`, plantilla completa en [`reporte-mensual.gs`](reporte-mensual.gs)):
+
+- **Lee Firestore directamente por REST** con el token OAuth del dueño
+  del proyecto (vía IAM; no usa la contraseña de la app ni service
+  accounts, y las reglas de seguridad de la app cliente no cambian).
+- Lo dispara un **trigger de tiempo DIARIO** (7:00–8:00, implementación
+  **Head**) con una guardia: la Script Property `ultimoReporte`
+  (`"yyyy-MM"`) evita duplicados, así el trigger solo actúa el día 1 —
+  y si ese día falla, se auto-repara los días siguientes (además llega
+  un correo de aviso del fallo).
+- El manifest `appsscript.json` declara los **scopes explícitos**
+  (`script.send_mail`, `script.external_request`, `datastore`,
+  `spreadsheets`, `drive`): al declararlos hay que listar TODOS los que
+  el proyecto usa, o el `doPost` dejaría de poder enviar correos.
+- Guardar código nuevo **no afecta** al Web App desplegado (sirve su
+  versión congelada); el trigger sí corre siempre el código guardado.
+
+**Para re-enviar o re-generar un mes**: ejecutar `pruebaReporteManual`
+desde el editor (borra la marca y repite el flujo completo del mes
+pasado; si el Sheet del mes ya existe en la carpeta, se reutiliza en
+vez de duplicarse). `pruebaConexionFirestore` solo consulta y escribe
+el conteo en el log, sin correos — útil para diagnosticar.
+
 ## Notas
 
 - La app solo avisa al **crear** un registro (no al eliminar ni al
