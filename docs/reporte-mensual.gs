@@ -41,7 +41,7 @@ const RPT_REMITENTE = "Finanzas H&S";            // nombre que muestra Gmail com
 const RPT_NOMBRE_CARPETA = "Finanzas H&S — Reportes";
 const RPT_PROP_ULTIMO = "ultimoReporte";         // "yyyy-MM" del último mes reportado
 const RPT_PROP_CARPETA_ID = "carpetaReportesId"; // cache del id de la carpeta
-const RPT_MAX_FILAS_CORREO = 400;                // más movimientos que esto: detalle solo en el Sheet
+const RPT_MAX_FILAS_CORREO = 300;                // más filas que esto: detalle solo en el Sheet (Gmail recorta >100 KB)
 const RPT_FORMATO_L = '"L" #,##0.00';
 const RPT_MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -520,111 +520,95 @@ function rptCorreoTexto_(mes, resumen, url, txs) {
 function rptCorreoHtml_(mes, resumen, url, txs) {
   const VERDE = "#1b7f3b";
   const ROJO = "#c0392b";
-  const GRIS = "#777777";
   const colorBalance = resumen.balance >= 0 ? VERDE : ROJO;
   const generado = Utilities.formatDate(new Date(), RPT_TZ, "dd/MM/yyyy HH:mm");
 
-  const celda = function (html, estilo) {
-    return "<td style='padding:5px 8px;border-bottom:1px solid #e6e6e6;" +
-      "vertical-align:top;" + (estilo || "") + "'>" + html + "</td>";
-  };
-  const cab = function (texto, estilo) {
-    return "<th style='padding:6px 8px;border-bottom:2px solid #999;" +
-      "text-align:left;font-size:12px;color:#555;white-space:nowrap;" +
-      (estilo || "") + "'>" + texto + "</th>";
-  };
-  const num = "text-align:right;white-space:nowrap;";
-  const tabla = function (contenido, estilo) {
-    return "<table cellspacing='0' cellpadding='0' style='border-collapse:collapse;" +
-      "font-size:13px;" + (estilo || "") + "'>" + contenido + "</table>";
-  };
-  const titulo = function (texto) {
-    return "<h3 style='margin:22px 0 6px;font-size:15px;color:#333'>" + texto + "</h3>";
-  };
+  // Estilos por clase (Gmail los respeta) para que el correo pese poco
+  // aunque traiga cientos de filas; Gmail recorta mensajes de más de
+  // ~100 KB. Lo esencial (totales, colores) va además inline.
+  const css =
+    "h2{margin:0;font-size:20px}h3{margin:22px 0 6px;font-size:15px;color:#333}" +
+    "table{border-collapse:collapse;font-size:13px}" +
+    "td,th{padding:5px 8px;border-bottom:1px solid #e6e6e6;vertical-align:top;text-align:left}" +
+    "th{border-bottom:2px solid #999;font-size:12px;color:#555;white-space:nowrap}" +
+    ".t td{padding:8px 12px 8px 0;border-bottom:0;font-size:14px}" +
+    ".n{text-align:right;white-space:nowrap}.s{white-space:nowrap}" +
+    ".d{width:100%;font-size:12px}.z{background:#f7f7f7}" +
+    ".g{color:" + VERDE + "}.m{color:#777}.x{color:#bbb}" +
+    ".u{font-size:11px;font-weight:normal;color:#777}";
 
-  // --- Cabecera y totales -------------------------------------------
-  let h = "<div style='font-family:Arial,Helvetica,sans-serif;font-size:14px;" +
-    "color:#222;max-width:720px'>";
-  h += "<h2 style='margin:0;font-size:20px'>📊 Reporte mensual — " +
-    rptEsc_(mes.label) + "</h2>";
-  h += "<div style='color:" + GRIS + ";margin:2px 0 14px'>Finanzas H&amp;S · datos al " +
+  let h = "<html><head><meta charset='utf-8'><style>" + css + "</style></head><body>" +
+    "<div style='font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;max-width:720px'>";
+  h += "<h2>📊 Reporte mensual — " + rptEsc_(mes.label) + "</h2>";
+  h += "<div class='m' style='color:#777;margin:2px 0 14px'>Finanzas H&amp;S · datos al " +
     generado + "</div>";
 
+  // --- Totales (inline: deben verse aunque un cliente ignore <style>) ---
   const filaTotal = function (etiqueta, monto, color, nota, tam) {
-    return "<tr>" +
-      celda("<b>" + etiqueta + "</b>", "padding:8px 12px 8px 0;border-bottom:0") +
-      celda("<b style='color:" + color + ";font-size:" + tam + "px'>" + rptFmtL_(monto) + "</b>",
-        num + "padding:8px 12px 8px 0;border-bottom:0") +
-      celda("<span style='color:" + GRIS + "'>" + nota + "</span>", "border-bottom:0") +
-      "</tr>";
+    return "<tr><td><b>" + etiqueta + "</b></td>" +
+      "<td class='n' style='text-align:right'><b style='color:" + color +
+      ";font-size:" + tam + "px'>" + rptFmtL_(monto) + "</b></td>" +
+      "<td class='m' style='color:#777'>" + nota + "</td></tr>";
   };
-  h += tabla(
+  h += "<table class='t'>" +
     filaTotal("Ingresos", resumen.ingresos, VERDE, resumen.nIngresos + " movimientos", 16) +
     filaTotal("Egresos", resumen.egresos, ROJO, resumen.nEgresos + " movimientos", 16) +
     filaTotal("Balance", resumen.balance, colorBalance,
-      resumen.balance >= 0 ? "ahorro del mes" : "el mes cerró en negativo", 18),
-    "font-size:14px");
+      resumen.balance >= 0 ? "ahorro del mes" : "el mes cerró en negativo", 18) +
+    "</table>";
 
   // --- Desglose por categoría ----------------------------------------
   const tablaCategorias = function (lista, total, vacio) {
-    if (lista.length === 0) {
-      return "<div style='color:" + GRIS + "'>" + vacio + "</div>";
-    }
-    let filas = "<tr>" + cab("Categoría") + cab("Monto", num) + cab("%", num) + "</tr>";
+    if (lista.length === 0) return "<div class='m'>" + vacio + "</div>";
+    let f = "<tr><th>Categoría</th><th class='n'>Monto</th><th class='n'>%</th></tr>";
     lista.forEach(function (c) {
       const pct = total > 0 ? Math.round((c.monto / total) * 100) : 0;
-      filas += "<tr>" + celda(rptEsc_(c.categoria)) +
-        celda(rptFmtL_(c.monto), num) +
-        celda("<span style='color:" + GRIS + "'>" + pct + "%</span>", num) + "</tr>";
+      f += "<tr><td>" + rptEsc_(c.categoria) + "</td><td class='n'>" + rptFmtL_(c.monto) +
+        "</td><td class='n m'>" + pct + "%</td></tr>";
     });
-    filas += "<tr>" + celda("<b>Total</b>", "border-bottom:0") +
-      celda("<b>" + rptFmtL_(total) + "</b>", num + "border-bottom:0") +
-      celda("", "border-bottom:0") + "</tr>";
-    return tabla(filas, "min-width:320px");
+    f += "<tr><td><b>Total</b></td><td class='n'><b>" + rptFmtL_(total) + "</b></td><td></td></tr>";
+    return "<table style='min-width:320px'>" + f + "</table>";
   };
-  h += titulo("Egresos por categoría");
-  h += tablaCategorias(resumen.egresosPorCategoria, resumen.egresos, "(sin egresos)");
-  h += titulo("Ingresos por categoría");
-  h += tablaCategorias(resumen.ingresosPorCategoria, resumen.ingresos, "(sin ingresos)");
+  h += "<h3>Egresos por categoría</h3>" +
+    tablaCategorias(resumen.egresosPorCategoria, resumen.egresos, "(sin egresos)");
+  h += "<h3>Ingresos por categoría</h3>" +
+    tablaCategorias(resumen.ingresosPorCategoria, resumen.ingresos, "(sin ingresos)");
 
   // --- Detalle completo de movimientos -------------------------------
-  h += titulo("Detalle de movimientos (" + txs.length + ")");
+  h += "<h3>Detalle de movimientos (" + txs.length + ")</h3>";
   if (txs.length === 0) {
-    h += "<div style='color:" + GRIS + "'>(sin movimientos este mes)</div>";
+    h += "<div class='m'>(sin movimientos este mes)</div>";
   } else if (txs.length > RPT_MAX_FILAS_CORREO) {
-    h += "<div style='color:" + GRIS + "'>Demasiados movimientos para el correo: " +
-      "el detalle completo está en la pestaña <b>Detalle</b> del Sheet.</div>";
+    h += "<div class='m'>Demasiados movimientos para el correo: el detalle completo " +
+      "está en la pestaña <b>Detalle</b> del Sheet.</div>";
   } else {
-    let filas = "<tr>" + cab("Fecha") + cab("Tipo") + cab("Categoría") +
-      cab("Descripción") + cab("Banco") + cab("Monto", num) + "</tr>";
+    let f = "<tr><th>Fecha</th><th>Tipo</th><th>Categoría</th><th>Descripción</th>" +
+      "<th>Banco</th><th class='n'>Monto</th></tr>";
     txs.forEach(function (t, i) {
       const esIng = t.tipo === "ingreso";
-      const fondo = i % 2 === 1 ? "background:#f7f7f7;" : "";
       const divisa = t.moneda === "USD"
-        ? "<br><span style='color:" + GRIS + ";font-size:11px;font-weight:normal'>USD " +
-          Number(t.montoOriginal).toFixed(2) +
+        ? "<br><span class='u'>USD " + Number(t.montoOriginal).toFixed(2) +
           (t.tasaCambio ? " @ " + rptEsc_(t.tasaCambio) : "") + "</span>"
         : "";
-      filas += "<tr style='" + fondo + "'>" +
-        celda(Utilities.formatDate(t.fecha, RPT_TZ, "dd/MM"), "white-space:nowrap") +
-        celda(esIng ? "<span style='color:" + VERDE + "'>Ingreso</span>" : "Egreso") +
-        celda(rptEsc_(t.categoria)) +
-        celda(rptEsc_(t.descripcion) || "<span style='color:#bbb'>—</span>") +
-        celda(rptEsc_(t.banco), "white-space:nowrap") +
-        celda("<b style='color:" + (esIng ? VERDE : "#222") + "'>" +
-          (esIng ? "+" : "") + rptFmtL_(t.monto) + "</b>" + divisa, num) +
-        "</tr>";
+      f += "<tr" + (i % 2 === 1 ? " class='z'" : "") + ">" +
+        "<td class='s'>" + Utilities.formatDate(t.fecha, RPT_TZ, "dd/MM") + "</td>" +
+        "<td" + (esIng ? " class='g'" : "") + ">" + (esIng ? "Ingreso" : "Egreso") + "</td>" +
+        "<td>" + rptEsc_(t.categoria) + "</td>" +
+        "<td>" + (rptEsc_(t.descripcion) || "<span class='x'>—</span>") + "</td>" +
+        "<td class='s'>" + rptEsc_(t.banco) + "</td>" +
+        "<td class='n'><b" + (esIng ? " class='g'" : "") + ">" + (esIng ? "+" : "") +
+        rptFmtL_(t.monto) + "</b>" + divisa + "</td></tr>";
     });
-    h += tabla(filas, "width:100%;font-size:12px");
+    h += "<table class='d'>" + f + "</table>";
   }
 
   // --- Enlace y pie ----------------------------------------------------
   h += "<p style='margin-top:22px'><a href='" + rptEsc_(url) + "' style='color:#1a5fb4'>" +
     "Abrir el Google Sheet de " + rptEsc_(mes.label) + "</a> — pestañas <b>Resumen</b> y " +
     "<b>Detalle</b>, en la carpeta de Drive «" + rptEsc_(RPT_NOMBRE_CARPETA) + "».</p>";
-  h += "<p style='color:#999;font-size:12px'>— Finanzas H&amp;S · reporte automático " +
+  h += "<p class='m' style='color:#999;font-size:12px'>— Finanzas H&amp;S · reporte automático " +
     "del día " + RPT_DIA_ENVIO + " de cada mes</p>";
-  h += "</div>";
+  h += "</div></body></html>";
   return h;
 }
 
