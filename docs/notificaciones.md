@@ -129,12 +129,18 @@ del presupuesto restante**: 20% → 10% → 5% → 4% → 3% → 2% → 1%.
 
 ## Reporte mensual en Google Sheet
 
-El **día 1 de cada mes por la mañana (7–8 am)** llega a ambos correos un
-resumen del **mes que acaba de cerrar** con el enlace a un **Google
-Sheet** (pestañas *Resumen* y *Detalle*: fecha, tipo, categoría,
-descripción, banco, método y monto de cada movimiento). Los Sheets
-quedan en la carpeta de Drive **"Finanzas H&S — Reportes"** (compartida
-como lectura con el segundo correo).
+El **día 6 de cada mes por la mañana (7–8 am)** llega a ambos correos el
+cierre del **mes anterior**: ingresos, egresos y balance, el desglose por
+categoría (con % del total) y el **detalle completo de los movimientos**
+(fecha, tipo, categoría, descripción, banco y monto), más el enlace a un
+**Google Sheet** con lo mismo (pestañas *Resumen* y *Detalle*). Los
+Sheets quedan en la carpeta de Drive **"Finanzas H&S — Reportes"**
+(compartida como lectura con el segundo correo).
+
+**¿Por qué el día 6 y no el 1?** Parte de los ingresos se calcula y se
+anota durante los primeros cinco días del mes siguiente; con el corte
+el día 1 el reporte salía incompleto. Los días 1–5 el trigger corre
+pero no hace nada.
 
 Vive en el **mismo proyecto de Apps Script**, en un archivo aparte
 (`Reporte.gs`, plantilla completa en [`reporte-mensual.gs`](reporte-mensual.gs)):
@@ -143,10 +149,13 @@ Vive en el **mismo proyecto de Apps Script**, en un archivo aparte
   del proyecto (vía IAM; no usa la contraseña de la app ni service
   accounts, y las reglas de seguridad de la app cliente no cambian).
 - Lo dispara un **trigger de tiempo DIARIO** (7:00–8:00, implementación
-  **Head**) con una guardia: la Script Property `ultimoReporte`
-  (`"yyyy-MM"`) evita duplicados, así el trigger solo actúa el día 1 —
-  y si ese día falla, se auto-repara los días siguientes (además llega
-  un correo de aviso del fallo).
+  **Head**) con dos guardias: el día del mes (`RPT_DIA_ENVIO = 6`) y la
+  Script Property `ultimoReporte` (`"yyyy-MM"`), que evita duplicados —
+  así el trigger solo actúa el día 6, y si ese día falla, se
+  auto-repara los días siguientes (además llega un correo de aviso del
+  fallo).
+- El correo se manda con `MailApp` en HTML (con respaldo en texto
+  plano) desde la misma cuenta, con remitente "Finanzas H&S".
 - El manifest `appsscript.json` declara los **scopes explícitos**
   (`script.send_mail`, `script.external_request`, `datastore`,
   `spreadsheets`, `drive`): al declararlos hay que listar TODOS los que
@@ -154,11 +163,20 @@ Vive en el **mismo proyecto de Apps Script**, en un archivo aparte
 - Guardar código nuevo **no afecta** al Web App desplegado (sirve su
   versión congelada); el trigger sí corre siempre el código guardado.
 
-**Para re-enviar o re-generar un mes**: ejecutar `pruebaReporteManual`
-desde el editor (borra la marca y repite el flujo completo del mes
-pasado; si el Sheet del mes ya existe en la carpeta, se reutiliza en
-vez de duplicarse). `pruebaConexionFirestore` solo consulta y escribe
-el conteo en el log, sin correos — útil para diagnosticar.
+**Utilidades** (ejecutar desde el editor):
+
+- `pruebaConexionFirestore` — solo consulta y escribe el conteo en el
+  log, sin correos (diagnóstico).
+- `pruebaCorreoSoloHector` — manda el correo del mes pasado **solo al
+  primer correo** con asunto `[PRUEBA]`, con los datos de hoy; no marca
+  el mes ni modifica un Sheet que ya exista.
+- `pruebaReporteManual` — envío **real a ambos, hoy mismo** (no espera
+  al día 6): borra la marca y repite el flujo completo del mes pasado;
+  si el Sheet del mes ya existe se reutiliza y se refresca, no se
+  duplica.
+- `reiniciarMarcaReporte` — solo borra la marca: el mes pasado se
+  vuelve a generar y enviar en la próxima corrida del trigger (día 6 o
+  después).
 
 ## Notas
 
