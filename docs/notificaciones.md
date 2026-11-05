@@ -178,6 +178,59 @@ Vive en el **mismo proyecto de Apps Script**, en un archivo aparte
   vuelve a generar y enviar en la próxima corrida del trigger (día 6 o
   después).
 
+## Registro automático desde los correos de los bancos
+
+Vive en el **mismo proyecto**, en `Correos.gs` (plantilla completa en
+[`correos-automaticos.gs`](correos-automaticos.gs)). Un trigger de
+tiempo **cada 5 minutos** (`revisarCorreos`) lee el Gmail del dueño del
+proyecto **solo en lectura** (`gmail.readonly`, servicio avanzado
+«Gmail API») y:
+
+- **Compras con tarjeta** (BAC «BAC Credomatic Informa» con Estado
+  Aprobada; Davivienda «Notificación de transacción») → egreso directo,
+  con comercio, tarjeta y categoría: regla aprendida (colección
+  `reglas`, la escriben sus correcciones en la app) → si no hay, Claude
+  (`ANTHROPIC_API_KEY` en *Propiedades del script*; créditos de API,
+  ~US$ 0.005 por comercio nuevo y se recuerda) → si no, «Sin categoría»
+  (en la app: «Por clasificar»).
+- **Débitos de cuenta** (BAC «Notificación Movimiento Monetario» con
+  Monto enviado; Davivienda «Débito a Cuenta») → colección `pendientes`.
+  No suman hasta que en la app toquen «Es gasto»; pueden ser traslados
+  entre sus cuentas o pagos de tarjeta.
+- **Sin duplicados**: cada correo se procesa una vez (ids en Script
+  Properties, ventana de 10 días) y el documento lleva id
+  `auto_<idDelCorreo>`; si ya lo anotaron a mano (mismo monto y banco,
+  ±2 días) se enlaza en vez de crear otro, y un correo que ya está en un
+  movimiento (enlazado o confirmado) no se registra de nuevo. Lo que
+  borren en la app no vuelve a entrar. Si anotan a mano algo que se
+  parece a un movimiento por confirmar, la app pregunta «¿Es el mismo
+  movimiento?»: si sí, se enlaza y deja de estar pendiente; si no, el
+  pendiente se queda.
+- Igual que desde el teléfono: aviso por correo si supera el umbral y
+  alarmas del presupuesto mensual.
+- Estado en `config/auto` (la app lo muestra en *Ajustes → Registro
+  automático*). Si algo falla, llega a Héctor un correo de aviso (máximo
+  uno por día). Cada corrida trabaja hasta ~4 minutos (Apps Script corta
+  a los 6): si quedan avisos, por ejemplo al usar `importarDesde`, siguen
+  en la corrida siguiente sin perder lo ya hecho.
+- **Cierre diario (11 p. m., `cierreDiario`)**: revisa los últimos 10
+  días y quita los duplicados seguros — doble toque (mismos datos
+  guardados con ≤ 2 min de diferencia) y el egreso anotado a mano que
+  repite un cargo que ya entró solo (monto exacto, mismo banco, ±2 días:
+  se deja el de mano, con los datos del banco). Los parecidos (±L 1 u
+  otro banco) no se tocan: van en un correo a Héctor. Todo lo quitado se
+  copia antes a la colección `papelera` con el motivo (recuperable). Si
+  algo falla a mitad, sigue con el resto y el correo del cierre dice qué
+  no se pudo terminar (se intenta otra vez la noche siguiente).
+
+**Puesta en marcha (una sola vez):** agregar el servicio «Gmail API»;
+manifest con los scopes `gmail.readonly` y `script.scriptapp` además de
+los cinco anteriores; ejecutar `probarLecturaCorreos` (solo lee y
+muestra; aquí Google pide autorizar — marcar **todas** las casillas);
+opcional `probarClasificador`; y `activarRegistroAutomatico`, que toma
+como inicio el momento de activarlo (no importa avisos viejos;
+`importarDesde("AAAA-MM-DD")` recupera hasta 10 días atrás).
+
 ## Notas
 
 - La app solo avisa al **crear** un registro (no al eliminar ni al

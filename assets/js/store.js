@@ -1,19 +1,28 @@
 /* =============================================================
-   store.js — Acceso a datos en Firestore
+   store.js — Acceso a datos en Firestore (v3)
    Estructura:
      /hogar/{HOGAR_ID}/transacciones/{id}
-     /hogar/{HOGAR_ID}/cuentas/{id}
+     /hogar/{HOGAR_ID}/pendientes/{id}    ← débitos de cuenta leídos del
+                                            correo, esperando "es gasto / no"
+     /hogar/{HOGAR_ID}/reglas/{clave}     ← comercio → categoría aprendida
+     /hogar/{HOGAR_ID}/cuentas/{id}       (archivo legado)
      /hogar/{HOGAR_ID}/categorias/{id}
-     /hogar/{HOGAR_ID}/config/app
+     /hogar/{HOGAR_ID}/config/app | alertas | auto
    ============================================================= */
 
 const Store = {
   transacciones: [],
   cuentas: [],
   categorias: [],
-  _listeners: { transacciones: null, cuentas: null, categorias: null },
+  pendientes: [],
+  autoEstado: null,          // config/auto: lo escribe el script de los correos
+  _listeners: {},
   _subscribers: []
 };
+
+// Campos extra permitidos al crear un movimiento (origen automático, o
+// anotado a mano y enlazado con el aviso del banco: vinculadoCorreo)
+const CAMPOS_ORIGEN = ["origen", "fuente", "comercio", "tarjeta", "gmailId", "detalle", "categoriaVia", "vinculadoCorreo"];
 
 function hogarRef() {
   return window.FBase.db.collection("hogar").doc(window.FBase.HOGAR_ID);
@@ -54,11 +63,24 @@ function startListeners() {
       Store.categorias = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       emit();
     }, err => console.error("listener categorias:", err));
+
+  Store._listeners.pendientes = ref.collection("pendientes")
+    .orderBy("fecha", "desc")
+    .onSnapshot(snap => {
+      Store.pendientes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      emit();
+    }, err => console.error("listener pendientes:", err));
+
+  Store._listeners.auto = ref.collection("config").doc("auto")
+    .onSnapshot(doc => {
+      Store.autoEstado = doc.exists ? doc.data() : null;
+      emit();
+    }, err => console.error("listener config/auto:", err));
 }
 
 function stopListeners() {
   Object.values(Store._listeners).forEach(u => u && u());
-  Store._listeners = { transacciones: null, cuentas: null, categorias: null };
+  Store._listeners = {};
 }
 
 // ---- Bootstrap inicial (semilla) ----
@@ -108,9 +130,7 @@ async function addCategoria(nombre, grupo = "Otros") {
   return docRef.id;
 }
 
-// ---- Cuentas ----
-// Las cuentas nuevas son del matrimonio ("hs"); el campo propietario
-// se conserva solo por compatibilidad con las cuentas antiguas.
+// ---- Cuentas (legado) ----
 async function addCuenta({ propietario = "hs", nombre, saldoInicial = 0 }) {
   const docRef = await hogarRef().collection("cuentas").add({
     propietario,
@@ -128,19 +148,13 @@ async function updateCuenta(id, data) {
 }
 
 async function setSaldoInicial(id, nuevoSaldoInicial) {
-  // Reajusta el saldoActual considerando todas las transacciones existentes
   const cuenta = Store.cuentas.find(c => c.id === id);
   if (!cuenta) throw new Error("Cuenta no existe");
-
   const txs = Store.transacciones.filter(t => t.cuenta === id);
-  const delta = txs.reduce((acc, t) => {
-    return acc + (t.tipo === "ingreso" ? Number(t.monto) : -Number(t.monto));
-  }, 0);
-
-  const nuevoActual = Number(nuevoSaldoInicial) + delta;
+  const delta = txs.reduce((acc, t) => acc + (t.tipo === "ingreso" ? Number(t.monto) : -Number(t.monto)), 0);
   await hogarRef().collection("cuentas").doc(id).update({
     saldoInicial: Number(nuevoSaldoInicial),
-    saldoActual: nuevoActual,
+    saldoActual: Number(nuevoSaldoInicial) + delta,
     fechaSaldoInicial: firebase.firestore.FieldValue.serverTimestamp()
   });
 }
@@ -153,18 +167,17 @@ async function deleteCuenta(id) {
 // El campo "cuenta" guarda el nombre del banco (catálogo fijo). Las
 // transacciones antiguas guardaban el id de un doc de "cuentas"; solo
 // esas llevaban saldo — los bancos son etiquetas y no tocan saldos.
-async function addTransaccion(tx) {
+function armarTransaccion(tx) {
   const monto = Number(tx.monto);
   if (!monto || monto <= 0) throw new Error("Monto inválido");
 
-  // Convertir si es USD
   const moneda = tx.moneda || "HNL";
-  const tasa = window.Exchange.current.rate;
+  const tasa = Number(tx.tasaCambio) > 0 ? Number(tx.tasaCambio) : window.Exchange.current.rate;
   const montoHNL = moneda === "USD" ? monto * tasa : monto;
 
   const data = {
     tipo: tx.tipo,
-    persona: tx.persona,
+    persona: tx.persona || "hs",
     monto: montoHNL,
     montoOriginal: monto,
     moneda,
@@ -174,25 +187,69 @@ async function addTransaccion(tx) {
     metodoPago: tx.metodoPago || "transferencia",
     cuenta: tx.cuenta || "Efectivo",
     fecha: firebase.firestore.Timestamp.fromDate(tx.fecha || new Date()),
-    creadoPor: tx.persona,
+    creadoPor: tx.persona || "hs",
     creadoEn: firebase.firestore.FieldValue.serverTimestamp()
   };
+  CAMPOS_ORIGEN.forEach(k => {
+    if (tx[k] !== undefined && tx[k] !== null && tx[k] !== "") data[k] = tx[k];
+  });
+  return { data, montoHNL };
+}
 
+async function addTransaccion(tx, opts = {}) {
+  const { data, montoHNL } = armarTransaccion(tx);
   const batch = window.FBase.db.batch();
-  const txRef = hogarRef().collection("transacciones").doc();
+  // Al confirmar un pendiente, el egreso toma el MISMO id del pendiente
+  // (auto_<idDelCorreo>): si los dos teléfonos lo confirman, o uno estaba
+  // sin conexión, se escribe dos veces el mismo documento y queda uno solo.
+  const col = hogarRef().collection("transacciones");
+  const txRef = opts.borrarPendienteId ? col.doc(opts.borrarPendienteId) : col.doc();
   batch.set(txRef, data);
 
   // Solo si apunta a una cuenta legacy real se ajusta su saldo
   if (Store.cuentas.some(c => c.id === tx.cuenta)) {
-    const ctaRef = hogarRef().collection("cuentas").doc(tx.cuenta);
     const delta = tx.tipo === "ingreso" ? montoHNL : -montoHNL;
-    batch.update(ctaRef, {
+    batch.update(hogarRef().collection("cuentas").doc(tx.cuenta), {
       saldoActual: firebase.firestore.FieldValue.increment(delta)
     });
   }
-
+  // Confirmar un pendiente del correo = crear el egreso y quitar el
+  // pendiente en la MISMA escritura (no queda huérfano)
+  if (opts.borrarPendienteId) {
+    batch.delete(hogarRef().collection("pendientes").doc(opts.borrarPendienteId));
+  }
   await batch.commit();
   return txRef.id;
+}
+
+// Editar un movimiento existente. Recalcula el monto en lempiras si es
+// en dólares (con la tasa que ya tenía, para no mover el pasado).
+async function updateTransaccion(id, cambios) {
+  const actual = Store.transacciones.find(t => t.id === id);
+  if (!actual) throw new Error("El movimiento ya no existe");
+  if (Store.cuentas.some(c => c.id === actual.cuenta)) {
+    throw new Error("Este registro antiguo no se puede editar; elimínalo y créalo de nuevo");
+  }
+  const monto = Number(cambios.monto);
+  if (!monto || monto <= 0) throw new Error("Monto inválido");
+  const moneda = cambios.moneda || actual.moneda || "HNL";
+  const tasa = moneda === "USD"
+    ? (Number(actual.tasaCambio) > 0 && actual.moneda === "USD" ? Number(actual.tasaCambio) : window.Exchange.current.rate)
+    : null;
+  const data = {
+    tipo: cambios.tipo || actual.tipo,
+    monto: moneda === "USD" ? monto * tasa : monto,
+    montoOriginal: monto,
+    moneda,
+    tasaCambio: tasa,
+    categoria: cambios.categoria || null,
+    descripcion: cambios.descripcion || "",
+    metodoPago: cambios.metodoPago || actual.metodoPago || "transferencia",
+    cuenta: cambios.cuenta || actual.cuenta || "Efectivo",
+    editadoEn: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  if (cambios.fecha instanceof Date) data.fecha = firebase.firestore.Timestamp.fromDate(cambios.fecha);
+  await hogarRef().collection("transacciones").doc(id).update(data);
 }
 
 async function deleteTransaccion(id) {
@@ -211,6 +268,36 @@ async function deleteTransaccion(id) {
   await batch.commit();
 }
 
+// ---- Pendientes del correo (débitos de cuenta por confirmar) ----
+async function descartarPendiente(id) {
+  await hogarRef().collection("pendientes").doc(id).delete();
+}
+
+// ---- Reglas comercio → categoría ----
+// Misma normalización que el script de los correos (Correos.gs):
+// mayúsculas, sin tildes, sin números ni signos.
+function claveComercio(comercio) {
+  return String(comercio || "")
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/ /g, "_")
+    .slice(0, 120);
+}
+
+async function guardarRegla(comercio, categoria) {
+  const clave = claveComercio(comercio);
+  if (!clave || !categoria) return;
+  await hogarRef().collection("reglas").doc(clave).set({
+    comercio: String(comercio),
+    categoria,
+    origen: "usuario",
+    actualizado: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+
 // ---- Export / Import ----
 // Nota: las fotos de fondo (colección "fondos") NO se incluyen en el
 // respaldo — son imágenes grandes y se administran desde Ajustes.
@@ -224,32 +311,49 @@ async function exportData() {
   };
 }
 
+// El JSON del respaldo trae las fechas como {seconds, nanoseconds}:
+// hay que volverlas Timestamp o quedarían como mapas sin fecha.
+function revivirFechas(v) {
+  if (Array.isArray(v)) return v.map(revivirFechas);
+  if (v && typeof v === "object") {
+    const k = Object.keys(v);
+    if (k.length === 2 && typeof v.seconds === "number" && typeof v.nanoseconds === "number") {
+      return new firebase.firestore.Timestamp(v.seconds, v.nanoseconds);
+    }
+    const o = {};
+    k.forEach(key => { o[key] = revivirFechas(v[key]); });
+    return o;
+  }
+  return v;
+}
+
+// Firestore admite máximo 500 escrituras por lote: se parte en tandas.
+// Primero se escribe todo lo del respaldo y al final se borra lo que
+// sobra, así un corte a medias nunca deja la base con menos datos.
 async function importData(data) {
   if (!data || !Array.isArray(data.transacciones)) throw new Error("JSON inválido");
   const ref = hogarRef();
-  const batch = window.FBase.db.batch();
+  const db = window.FBase.db;
+  const ops = [];
+  const conservar = { transacciones: new Set(), cuentas: new Set(), categorias: new Set() };
 
-  // Limpia y reemplaza
-  const existingTx = await ref.collection("transacciones").get();
-  existingTx.forEach(d => batch.delete(d.ref));
-  const existingCta = await ref.collection("cuentas").get();
-  existingCta.forEach(d => batch.delete(d.ref));
-  const existingCat = await ref.collection("categorias").get();
-  existingCat.forEach(d => batch.delete(d.ref));
-
-  (data.cuentas || []).forEach(c => {
-    const { id, ...rest } = c;
-    batch.set(ref.collection("cuentas").doc(id || undefined), rest);
+  ["cuentas", "categorias", "transacciones"].forEach(col => {
+    (data[col] || []).forEach(item => {
+      const { id, ...rest } = item;
+      const docRef = id ? ref.collection(col).doc(id) : ref.collection(col).doc();
+      conservar[col].add(docRef.id);
+      ops.push(b => b.set(docRef, revivirFechas(rest)));
+    });
   });
-  (data.categorias || []).forEach(c => {
-    const { id, ...rest } = c;
-    batch.set(ref.collection("categorias").doc(id || undefined), rest);
-  });
-  (data.transacciones || []).forEach(t => {
-    const { id, ...rest } = t;
-    batch.set(ref.collection("transacciones").doc(id || undefined), rest);
-  });
-  await batch.commit();
+  for (const col of ["transacciones", "cuentas", "categorias"]) {
+    const snap = await ref.collection(col).get();
+    snap.forEach(d => { if (!conservar[col].has(d.id)) ops.push(b => b.delete(d.ref)); });
+  }
+  for (let i = 0; i < ops.length; i += 400) {
+    const batch = db.batch();
+    ops.slice(i, i + 400).forEach(op => op(batch));
+    await batch.commit();
+  }
 }
 
 // Adjuntamos métodos al MISMO objeto Store y lo exponemos como window.Store
@@ -265,7 +369,11 @@ Object.assign(Store, {
   setSaldoInicial,
   deleteCuenta,
   addTransaccion,
+  updateTransaccion,
   deleteTransaccion,
+  descartarPendiente,
+  claveComercio,
+  guardarRegla,
   exportData,
   importData
 });

@@ -1,8 +1,16 @@
-# Finanzas H&S — PWA (v2)
+# Finanzas H&S — PWA (v3)
 
 App móvil (instalable como PWA) para que **Héctor Castro y Sonia Chinchilla** registren sus ingresos y egresos en segundos, conozcan el efectivo disponible y vean dashboards con indicadores del mes y del año.
 
 Reemplaza el Excel `Ingresos y egresos Héctor & Sonia.xlsx` con una experiencia móvil sincronizada entre los dos teléfonos.
+
+## Novedades de la v3
+
+- **Registro automático desde los correos del banco** ⚡: las compras con tarjeta que avisan BAC («BAC Credomatic Informa») y Davivienda («Notificación de transacción») entran solas como egresos, con el comercio y la categoría (aprendida de sus correcciones o sugerida por Claude con los créditos de API). Los débitos de cuenta quedan **por confirmar** y no suman hasta que digan «Es gasto» — pueden ser traslados entre sus cuentas o pagos de tarjeta. Sin duplicados: si ya lo anotaron a mano, el aviso se enlaza al registro existente; si solo se parece, queda por confirmar; y cada noche (11 p. m.) un cierre diario quita los duplicados seguros (doble toque o anotado a mano después de que ya entró solo) y avisa los dudosos, guardando lo quitado en una papelera recuperable. Lo hace un Apps Script en el Gmail de Héctor — ver [`docs/correos-automaticos.gs`](docs/correos-automaticos.gs).
+- **Inicio rediseñado**: tarjeta grande con las fotos de la familia (cambian cada 3 segundos, con barra tipo «historias»; tocar a la izquierda/derecha = anterior/siguiente; se pausan mientras escriben), resumen del mes, los dos botones de captura lado a lado y los últimos registrados. La foto actual, difuminada, es el fondo de toda la app.
+- **Editar movimientos**: tocar un movimiento abre la misma hoja de captura para corregir monto, categoría, banco, fecha o descripción, o eliminarlo. Al corregir la categoría de una compra automática, la app la recuerda para ese comercio.
+- **Movimientos agrupados por día** (con el neto de cada día), íconos por categoría y pestaña «⚡ Auto».
+- **Correcciones**: cancelar una confirmación ya no deja la acción pendiente (antes, la siguiente confirmación ejecutaba también la cancelada); la fecha por defecto es la del teléfono (antes, desde las 6 p. m. se guardaba el día siguiente); «1,500» se lee como 1500 (antes 1.50); doble toque en Guardar ya no duplica; restaurar un respaldo funciona con más de 500 registros y conserva las fechas.
 
 ## Características
 
@@ -15,7 +23,7 @@ Reemplaza el Excel `Ingresos y egresos Héctor & Sonia.xlsx` con una experiencia
 - **Finanzas unificadas**: todo ingreso y egreso es del matrimonio; ya no se separa por persona ni por dueño de cuenta (el historial se consolidó en los bancos unificados conservando montos, fechas y quién lo registró).
 - **Balance siempre visible**: chip en la esquina superior con el neto del mes y del año.
 - **Dashboard**: ingresos vs egresos por mes del año en curso, tendencia de 6 meses, egresos por categoría e ingresos/egresos por banco (para saber en qué banco se mueve más el dinero).
-- **Fotos familiares de fondo**: rotan suavemente detrás de la app; **privadas** (viven en Firestore tras el login, no en este repositorio). Se administran en *Ajustes → Fotos de fondo*.
+- **Fotos de la familia**: tarjeta grande en Inicio y fondo difuminado; **privadas** (viven en Firestore tras el login, nunca en este repositorio). Se administran en *Ajustes → Fotos de la familia* (hasta 16). Cada foto acepta un campo opcional `foco: {x, y}` (fracciones) para centrar las caras; si no, 50 % / 40 %.
 - **Tema claro / oscuro / sistema** (sistema sigue el modo del teléfono: de día claro, de noche oscuro).
 - **Sincronización en tiempo real** entre teléfonos (Firebase Firestore) y **funciona offline** (incluida la sesión: solo el primer inicio en un dispositivo necesita internet).
 - **Conversión USD → HNL** automática (open.er-api.com) con override manual.
@@ -62,16 +70,18 @@ finanzas-hs/
     │   ├── exchange.js     # Tasa USD/HNL
     │   ├── store.js        # CRUD Firestore (transacciones, categorías)
     │   ├── charts.js       # Gráficos Chart.js
-    │   ├── fondos.js       # Fotos de fondo: slideshow + administración
+    │   ├── fondos.js       # Fotos: tarjeta de Inicio + fondo difuminado + administración
     │   ├── notify.js       # Avisos por correo al superar el umbral
     │   ├── presupuesto.js  # Presupuesto mensual: contador + alarmas escalonadas
-    │   ├── ui.js           # Navegación, modales, tema, helpers
-    │   └── app.js          # Bootstrap, captura rápida, dictado por voz
+    │   ├── auto.js         # Registro automático: pendientes, duplicados, estado
+    │   ├── ui.js           # Navegación, modales, tema, fechas y montos
+    │   └── app.js          # Bootstrap, Inicio, captura/edición, dictado por voz
     ├── img/                # Íconos Just Smile (any/maskable/apple) + logo login
     └── data/categorias.json# Catálogo semilla (solo primera vez)
 
 docs/notificaciones.md      # Guía del script de correo (sin claves)
 docs/reporte-mensual.gs     # Plantilla del reporte mensual (Apps Script)
+docs/correos-automaticos.gs # Plantilla del registro automático desde los bancos (Apps Script)
 ```
 
 ## Modelo de datos (Firestore)
@@ -80,14 +90,26 @@ docs/reporte-mensual.gs     # Plantilla del reporte mensual (Apps Script)
 /hogar/principal/
   ├── transacciones/{id}    {tipo, persona ("hs"; legado: hector/sonia), monto (HNL),
   │                          montoOriginal, moneda, tasaCambio, categoria, descripcion,
-  │                          metodoPago, cuenta (nombre del banco), fecha, creadoEn}
+  │                          metodoPago, cuenta (nombre del banco), fecha, creadoEn,
+  │                          editadoEn?; automáticos: origen "correo", fuente,
+  │                          comercio, tarjeta, gmailId, categoriaVia; enlazados a
+  │                          mano: vinculadoCorreo, gmailId}
+  ├── pendientes/{auto_id}  {monto, montoOriginal, moneda, cuenta, fecha, fuente,
+  │                          detalle, gmailId} ← débitos de cuenta por confirmar
+  ├── reglas/{CLAVE}        {comercio, categoria, origen "usuario"|"ia"}
+  │                          ← comercio → categoría (lo que corrigen en la app manda)
   ├── cuentas/{id}          (archivo legado: ya no se usa ni se actualiza)
   ├── categorias/{id}       {nombre, grupo, esEgreso}
-  ├── fondos/{id}           {data (JPEG data-URL ≤ ~500 KB), orden, creadoEn}
+  ├── fondos/{id}           {data (JPEG data-URL ≤ ~500 KB), orden, foco?, creadoEn}
   ├── config/app            {tasaCambio*, notifUrl, notifSecret, notifUmbral,
   │                          presupuestoMensual}
-  └── config/alertas        {mes: "2026-08", enviadas: [20, 10, …]}
-                            ← umbrales (%) de presupuesto ya avisados en el mes
+  ├── config/alertas        {mes: "2026-08", enviadas: [20, 10, …]}
+  │                         ← umbrales (%) de presupuesto ya avisados en el mes
+  ├── config/auto           {ultimaRevision, ultimoResumen, ultimoError,
+  │                          cierreUltimo, cierreResumen}
+  │                         ← estado del registro automático y del cierre diario
+  └── papelera/{id}         copia de lo que el cierre diario (o una limpieza)
+                            quitó, con _motivo y _eliminadoEn (recuperable)
 ```
 
 El campo `cuenta` guarda el **nombre del banco** del catálogo fijo (el historial se migró una sola vez fusionando las cuentas por persona en su banco). Ya no se llevan saldos por cuenta: los totales salen de sumar ingresos y egresos. Los registros antiguos con `persona: hector|sonia` conservan ese campo y la lista lo muestra.

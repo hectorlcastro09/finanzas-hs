@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta id="meta-theme" name="theme-color" content="#f6f8f7" />
+  <meta id="meta-theme" name="theme-color" content="#f4f6f3" />
   <meta name="description" content="Finanzas Héctor & Sonia — control de ingresos, egresos y efectivo en tiempo real." />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -18,11 +18,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="assets/css/style.css?v=4" />
+  <link rel="stylesheet" href="assets/css/style.css?v=5" />
 </head>
 <body>
 
-<!-- ========== Fondo con fotos (privadas, cargan tras el login) ========== -->
+<!-- ========== Fondo: la foto actual, muy difuminada (privada, carga tras el login) ========== -->
 <div id="bg-slideshow" aria-hidden="true">
   <div id="bg-a" class="bg-layer"></div>
   <div id="bg-b" class="bg-layer"></div>
@@ -81,36 +81,85 @@
 
   <main class="app-main">
 
-    <!-- Inicio: captura rápida -->
+    <!-- ===== Inicio ===== -->
     <section id="view-inicio" class="view-content active">
       <div class="inicio-wrap">
-        <p class="inicio-saludo">¿Qué registramos hoy?</p>
-        <button class="btn-quick ingreso" id="btn-quick-ingreso">
-          <span class="bq-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
-          </span>
-          <span class="bq-text">
-            <strong>Ingreso</strong>
-            <small>Dinero que entra</small>
+
+        <!-- Fotos de la familia: cambian cada ~3 s; tocar = anterior / siguiente -->
+        <div id="hero" class="hero sin-fotos" role="img" aria-label="Fotos de la familia">
+          <div id="hero-a" class="hero-slide"></div>
+          <div id="hero-b" class="hero-slide"></div>
+          <div id="hero-progress" class="hero-progress" aria-hidden="true"></div>
+          <div class="hero-shade" aria-hidden="true"></div>
+          <div class="hero-text">
+            <p class="hero-fecha" id="hero-fecha"></p>
+            <p class="hero-saludo"><span id="hero-saludo">Hola</span><span class="hero-nombres">Héctor, Sonia y Elízabeth</span></p>
+          </div>
+          <div class="hero-vacio">
+            <span aria-hidden="true">📷</span>
+            Agrega fotos de la familia en <strong>Ajustes → Fotos</strong>
+          </div>
+        </div>
+
+        <!-- Mes en curso -->
+        <button type="button" class="mes-strip" id="mes-strip" title="Ver el resumen">
+          <span class="ms-titulo">Este mes · <span id="ms-mes"></span></span>
+          <span class="ms-cols">
+            <span class="ms-col"><small>Ingresos</small><strong id="ms-ing" class="pos">L 0</strong></span>
+            <span class="ms-col"><small>Egresos</small><strong id="ms-egr" class="neg">L 0</strong></span>
+            <span class="ms-col"><small>Balance</small><strong id="ms-bal">L 0</strong></span>
           </span>
         </button>
-        <button class="btn-quick egreso" id="btn-quick-egreso">
-          <span class="bq-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></svg>
+
+        <!-- Aviso de lo que entró solo desde los correos del banco -->
+        <button type="button" class="auto-banner hidden" id="auto-banner">
+          <span class="ab-icono" aria-hidden="true">⚡</span>
+          <span class="ab-cuerpo">
+            <strong>Del banco</strong>
+            <span class="ab-texto"></span>
           </span>
-          <span class="bq-text">
-            <strong>Egreso</strong>
-            <small>Dinero que sale</small>
-          </span>
+          <span class="ab-flecha" aria-hidden="true">›</span>
         </button>
+
+        <!-- Captura rápida -->
+        <p class="inicio-pregunta">¿Qué registramos hoy?</p>
+        <div class="quick-grid">
+          <button class="btn-quick ingreso" id="btn-quick-ingreso">
+            <span class="bq-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+            </span>
+            <span class="bq-text">
+              <strong>Ingreso</strong>
+              <small>Dinero que entra</small>
+            </span>
+          </button>
+          <button class="btn-quick egreso" id="btn-quick-egreso">
+            <span class="bq-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></svg>
+            </span>
+            <span class="bq-text">
+              <strong>Egreso</strong>
+              <small>Dinero que sale</small>
+            </span>
+          </button>
+        </div>
+
+        <!-- Últimos movimientos -->
+        <div class="recientes">
+          <div class="recientes-head">
+            <h3>Últimos registrados</h3>
+            <button type="button" class="link-btn" id="ver-todos">Ver todos ›</button>
+          </div>
+          <ul class="tx-list" id="list-recientes"></ul>
+        </div>
       </div>
     </section>
 
-    <!-- Resumen -->
+    <!-- ===== Resumen ===== -->
     <section id="view-resumen" class="view-content">
       <div class="page-title">
         <h2>Resumen</h2>
-        <select id="filter-period" class="select-sm">
+        <select id="filter-period" class="select-sm" aria-label="Período">
           <option value="month">Mes actual</option>
           <option value="prev">Mes anterior</option>
           <option value="year">Año</option>
@@ -135,7 +184,7 @@
           <div class="kpi-sub" id="kpi-expense-sub">del período</div>
         </div>
         <div class="kpi-card kpi-profit">
-          <div class="kpi-label">Beneficio / Pérdida</div>
+          <div class="kpi-label">Ahorro / Pérdida</div>
           <div class="kpi-value" id="kpi-profit">0%</div>
           <div class="kpi-sub" id="kpi-profit-sub">vs ingresos</div>
         </div>
@@ -161,14 +210,18 @@
       </div>
     </section>
 
-    <!-- Movimientos -->
+    <!-- ===== Movimientos ===== -->
     <section id="view-movimientos" class="view-content">
-      <div class="page-title"><h2>Movimientos</h2></div>
+      <div class="page-title">
+        <h2>Movimientos</h2>
+        <span class="muted small" id="movs-count"></span>
+      </div>
 
-      <div class="tabs">
+      <div class="tabs tabs-4">
         <button class="tab active" data-tx-filter="all">Todos</button>
         <button class="tab" data-tx-filter="ingreso">Ingresos</button>
         <button class="tab" data-tx-filter="egreso">Egresos</button>
+        <button class="tab" data-tx-filter="auto">⚡ Auto</button>
       </div>
 
       <div class="summary-row">
@@ -178,14 +231,40 @@
         </div>
       </div>
 
+      <p class="muted small hint-tap">Toca un movimiento para editarlo o eliminarlo.</p>
+
       <ul class="tx-list" id="list-movimientos">
         <li class="empty">Aún no hay movimientos registrados.</li>
       </ul>
     </section>
 
-    <!-- Ajustes -->
+    <!-- ===== Ajustes ===== -->
     <section id="view-ajustes" class="view-content">
       <div class="page-title"><h2>Ajustes</h2></div>
+
+      <div class="card">
+        <h3>Registro automático desde el banco <span id="auto-estado" class="notif-badge off">Sin activar</span></h3>
+        <p class="muted small">Las compras con tarjeta que avisan BAC y Davivienda por correo entran solas como egresos, con su comercio. Los débitos de cuenta quedan <strong>por confirmar</strong> (pueden ser traslados entre sus cuentas o pagos de tarjeta) y no suman hasta que digan «Es gasto».</p>
+        <dl class="auto-datos">
+          <div><dt>Última revisión</dt><dd id="auto-ultima">—</dd></div>
+          <div><dt>Entraron este mes</dt><dd id="auto-mes">—</dd></div>
+          <div><dt>Por confirmar</dt><dd id="auto-pend">0</dd></div>
+          <div><dt>Cierre diario (11 p. m.)</dt><dd id="auto-cierre">—</dd></div>
+        </dl>
+        <p id="auto-error" class="error small hidden"></p>
+        <button type="button" class="btn btn-outline btn-block" id="btn-ver-pendientes">Ver movimientos por confirmar</button>
+        <p class="muted small">Si cambian la categoría de una compra automática, la app la recuerda para la próxima vez en ese mismo comercio. Cada noche, el cierre diario quita los registros duplicados seguros (doble toque, o un gasto anotado a mano que ya había entrado solo) y le avisa a Héctor por correo los dudosos; lo quitado queda en una papelera recuperable.</p>
+      </div>
+
+      <div class="card">
+        <h3>Fotos de la familia</h3>
+        <p class="muted small">Se ven en Inicio y cambian cada 3 segundos; se pausan mientras escriben. Solo dentro de la app, en ambos teléfonos (privadas). <span id="fondos-hint"></span></p>
+        <div id="fondos-grid" class="fondos-grid"></div>
+        <label class="btn btn-outline btn-block">
+          + Agregar fotos
+          <input type="file" id="file-fondos" accept="image/*" multiple hidden />
+        </label>
+      </div>
 
       <div class="card">
         <h3>Tema</h3>
@@ -201,8 +280,8 @@
       </div>
 
       <div class="card">
-        <h3>Notificaciones por correo</h3>
-        <p class="muted">Cuando un ingreso o egreso supere el umbral, les llega un correo a ambos. <span id="notif-estado" class="notif-badge off">Sin configurar</span></p>
+        <h3>Notificaciones por correo <span id="notif-estado" class="notif-badge off">Sin configurar</span></h3>
+        <p class="muted small">Cuando un ingreso o egreso supere el umbral, les llega un correo a ambos (también si entró solo desde el banco).</p>
         <label>Umbral (L.)
           <input type="number" step="1" min="1" id="notif-umbral" placeholder="1000" inputmode="numeric" />
         </label>
@@ -224,23 +303,13 @@
       </div>
 
       <div class="card">
-        <h3>Fotos de fondo</h3>
-        <p class="muted small">Se ven en ambos teléfonos, solo dentro de la app (privadas). <span id="fondos-hint"></span></p>
-        <div id="fondos-grid" class="fondos-grid"></div>
-        <label class="btn btn-outline btn-block">
-          + Agregar fotos
-          <input type="file" id="file-fondos" accept="image/*" multiple hidden />
-        </label>
-      </div>
-
-      <div class="card">
         <h3>Tasa de cambio USD → HNL</h3>
-        <p class="muted">
+        <p class="muted small">
           Fuente: <span id="tasa-fuente">—</span> ·
           Actualizada: <span id="tasa-fecha">—</span>
         </p>
         <div class="tasa-row">
-          <input type="number" step="0.0001" id="tasa-input" placeholder="0.00" />
+          <input type="number" step="0.0001" id="tasa-input" placeholder="0.00" aria-label="Tasa de cambio" />
           <button class="btn btn-outline btn-sm" id="btn-tasa-api">Desde API</button>
           <button class="btn btn-primary btn-sm" id="btn-tasa-save">Guardar</button>
         </div>
@@ -266,7 +335,7 @@
 
       <div class="card">
         <h3>Respaldo</h3>
-        <p class="muted">Los datos viven en Firebase. Aquí puedes guardar una copia local.</p>
+        <p class="muted small">Los datos viven en Firebase. Aquí puedes guardar una copia local.</p>
         <div class="row-buttons">
           <button class="btn btn-outline btn-sm" id="btn-export">Exportar JSON</button>
           <label class="btn btn-outline btn-sm">
@@ -281,9 +350,9 @@
         <button class="btn btn-danger btn-sm" id="btn-logout">Cerrar sesión</button>
       </div>
 
-      <div class="card">
+      <div class="card card-acerca">
         <h3>Acerca de</h3>
-        <p class="muted small">Finanzas H&amp;S · PWA · v2.2</p>
+        <p class="muted small">Finanzas H&amp;S · PWA · v3.0</p>
         <p class="muted small">Hecha con amor para Héctor, Sonia y Elízabeth.</p>
       </div>
     </section>
@@ -291,8 +360,8 @@
   </main>
 
   <!-- Bottom nav -->
-  <nav class="bottom-nav">
-    <button class="nav-btn active" data-view="inicio">
+  <nav class="bottom-nav" aria-label="Secciones">
+    <button class="nav-btn active" data-view="inicio" aria-current="page">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg>
       <span>Inicio</span>
     </button>
@@ -311,7 +380,7 @@
   </nav>
 </div>
 
-<!-- ========== Sheet: captura rápida ========== -->
+<!-- ========== Hoja: captura rápida / editar / confirmar del banco ========== -->
 <div id="modal-quick" class="modal hidden">
   <div class="modal-backdrop" data-close-modal></div>
   <div class="modal-content sheet">
@@ -323,6 +392,7 @@
     </header>
     <form id="form-quick" class="modal-body">
       <input type="hidden" id="q-tipo" />
+      <p id="q-origen" class="q-origen hidden"></p>
 
       <div class="amount-wrap">
         <span class="amount-symbol" id="q-simbolo">L</span>
@@ -383,12 +453,30 @@
       </details>
 
       <button type="submit" class="btn btn-primary btn-block btn-lg" id="q-guardar">Guardar</button>
+      <button type="button" class="btn btn-danger-outline btn-block hidden" id="q-eliminar">Eliminar movimiento</button>
     </form>
   </div>
 </div>
 
+<!-- ========== Hoja: movimientos de cuenta por confirmar ========== -->
+<div id="modal-pendientes" class="modal hidden">
+  <div class="modal-backdrop" data-close-modal></div>
+  <div class="modal-content sheet">
+    <header class="modal-header">
+      <h3>Por confirmar</h3>
+      <button class="btn-icon" data-close-modal aria-label="Cerrar">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="modal-body">
+      <p class="muted small">Salidas de sus cuentas que avisó el banco. Si fue un gasto, regístrenlo con su categoría; si fue un traslado entre sus cuentas o el pago de una tarjeta, tóquenle «No es gasto».</p>
+      <ul class="pend-list" id="lista-pendientes"></ul>
+    </div>
+  </div>
+</div>
+
 <!-- ========== Modal: Confirmación ========== -->
-<div id="modal-confirm" class="modal hidden">
+<div id="modal-confirm" class="modal modal-top hidden">
   <div class="modal-backdrop" data-close-modal></div>
   <div class="modal-content modal-sm">
     <header class="modal-header">
@@ -397,7 +485,7 @@
     <div class="modal-body">
       <p id="confirm-msg"></p>
       <div class="row-buttons">
-        <button type="button" class="btn btn-outline" data-close-modal>Cancelar</button>
+        <button type="button" class="btn btn-outline" id="confirm-cancel">Cancelar</button>
         <button type="button" class="btn btn-danger" id="confirm-ok">Confirmar</button>
       </div>
     </div>
@@ -408,7 +496,7 @@
 <button id="update-banner" class="update-banner hidden">Nueva versión disponible — toca para actualizar</button>
 
 <!-- Toast -->
-<div id="toast" class="toast hidden"></div>
+<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
 <!-- Firebase + Chart.js -->
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js" crossorigin="anonymous"></script>
@@ -417,14 +505,15 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
 
 <!-- App scripts -->
-<script src="assets/js/firebase.js?v=4"></script>
-<script src="assets/js/exchange.js?v=4"></script>
-<script src="assets/js/store.js?v=4"></script>
-<script src="assets/js/charts.js?v=4"></script>
-<script src="assets/js/ui.js?v=4"></script>
-<script src="assets/js/fondos.js?v=4"></script>
-<script src="assets/js/notify.js?v=4"></script>
-<script src="assets/js/presupuesto.js?v=4"></script>
-<script src="assets/js/app.js?v=4"></script>
+<script src="assets/js/firebase.js?v=5"></script>
+<script src="assets/js/exchange.js?v=5"></script>
+<script src="assets/js/store.js?v=5"></script>
+<script src="assets/js/charts.js?v=5"></script>
+<script src="assets/js/ui.js?v=5"></script>
+<script src="assets/js/fondos.js?v=5"></script>
+<script src="assets/js/notify.js?v=5"></script>
+<script src="assets/js/presupuesto.js?v=5"></script>
+<script src="assets/js/auto.js?v=5"></script>
+<script src="assets/js/app.js?v=5"></script>
 </body>
 </html>
